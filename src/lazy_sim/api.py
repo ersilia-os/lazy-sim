@@ -215,13 +215,21 @@ def fetch(name, artifacts_dir=None, featurizers=DEFAULT, embeddings=False):
         try:
             remote.download_files(downloads, f"Fetching {name}")
         except BaseException:
-            logger.error("Fetch did not finish; delete %s and try again", folder)
+            if present:  # partial downloads never land; the library is untouched
+                logger.error(
+                    "Fetch did not finish; %s is unchanged, run it again", name
+                )
+            else:
+                logger.error("Fetch did not finish; delete %s and try again", folder)
             raise
     for n in names:
         feat = get_featurizer(n)
         if hasattr(feat, "ensure_weights"):
             feat.ensure_weights()
-    logger.success("Fetched %s → %s", name, folder)
+    if downloads:
+        logger.success("Fetched %s → %s", name, folder)
+    else:
+        logger.success("%s is already fetched → %s", name, folder)
     return folder
 
 

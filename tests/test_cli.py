@@ -216,7 +216,7 @@ def test_fetch_and_catalog(library, home, tmp_path, monkeypatch):
         _run("fetch", "tiny", "-f", "ecfp")
         assert (fetched / "ecfp.json").exists()
         assert "ecfp" in _run("catalog")
-    _run("fetch", "tiny")  # nothing left to download
+    assert "already fetched" in _run("fetch", "tiny")
 
     queries = DATA / "queries.csv"
     _run("search", "-i", queries, "-a", "tiny", "-o", tmp_path / "a.csv")
