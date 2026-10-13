@@ -20,6 +20,8 @@ from rdkit.Chem.rdmolops import FastFindRings
 from ..io import home, remote
 
 NAME = "clamp"
+ENGINE = "turbovec"
+SIMILARITY = "cosine"
 DIM = 768
 FP_SIZE = 8192
 WEIGHTS_FILE = "clamp_compound_encoder_v1.npz"

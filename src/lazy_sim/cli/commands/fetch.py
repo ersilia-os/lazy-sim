@@ -1,6 +1,6 @@
 import click
 
-from . import lazysim_cli, run_or_fail
+from . import embeddings_option, featurizers_option, lazysim_cli, run_or_fail
 
 
 def fetch_cmd():
@@ -13,13 +13,19 @@ def fetch_cmd():
         metavar="NAME|PATH",
         help="Where to put it.  [default: ~/lazysim/libraries/NAME]",
     )
-    @click.option(
-        "--embeddings",
-        is_flag=True,
-        help="Also download the full float32 embeddings (large).",
-    )
-    def fetch(name, artifacts_dir, embeddings):
-        """Download library NAME, ready to search (see 'lazysim catalog --remote')."""
+    @featurizers_option
+    @embeddings_option
+    def fetch(name, artifacts_dir, featurizers, embeddings):
+        """Download library NAME, ready to search (see 'lazysim catalog --remote').
+
+        Fetching a library you already have adds the featurizers it lacks.
+        """
         from ...api import fetch as run_fetch
 
-        run_or_fail(run_fetch, name, artifacts_dir, embeddings=embeddings)
+        run_or_fail(
+            run_fetch,
+            name,
+            artifacts_dir,
+            featurizers=featurizers,
+            embeddings=embeddings,
+        )

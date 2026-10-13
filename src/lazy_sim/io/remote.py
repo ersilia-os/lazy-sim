@@ -53,9 +53,11 @@ def read_catalog():
     with urllib.request.urlopen(url, timeout=30) as response:
         libraries = json.load(response)["libraries"]
     for entry in libraries.values():
-        for files in entry["files"].values():
-            for f in files:
-                f["url"] = urllib.parse.urljoin(url, f["path"])
+        groups = [entry["files"]]
+        for featurizer in entry["featurizers"].values():
+            groups += [featurizer["files"], featurizer.get("embeddings", [])]
+        for f in (f for files in groups for f in files):
+            f["url"] = urllib.parse.urljoin(url, f["path"])
     return libraries
 
 

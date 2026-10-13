@@ -2,7 +2,7 @@
 
 1. Download the Ersilia Reference Library (pinned commit) and check its sha256.
 2. Use each molecule's InChIKey as its id; SMILES are kept exactly as given.
-3. Index it with lazy-sim, keeping the full embeddings.
+3. Index it with lazy-sim (CLAMP and ECFP), keeping the full embeddings.
 4. Lay the files out as on S3 under ``data/libraries/``, and write ``catalog.json``
    as the published one plus this library (so nobody else's entries are lost).
 
@@ -23,16 +23,15 @@ import shutil
 import urllib.error
 import urllib.request
 from collections import Counter
-from importlib.metadata import version
 from pathlib import Path
 
 from rdkit import Chem, rdBase
 
 import lazy_sim
-from lazy_sim.featurizers import clamp
 from lazy_sim.io.remote import catalog_url, sha256
 
 NAME, VERSION, TITLE = "ersilia-reference", "v1", "Ersilia Reference Library"
+FEATURIZERS = ["clamp", "ecfp"]
 COMMIT = "7b4f378351cb480db61018198a19356eb288a3f7"
 SOURCE = (
     "https://github.com/ersilia-os/ersilia-model-hub-maintained-inputs/blob/"
@@ -111,9 +110,23 @@ def publish(built):
     }
     (built / "manifest.json").write_text(json.dumps(manifest, indent=2))
     OUT.mkdir(parents=True, exist_ok=True)
-    searchable = ["library.db", "skipped.csv", "clamp.tv", "manifest.json"]
-    for name in searchable + ["clamp_embeddings.npy"]:
-        shutil.move(built / name, OUT / name)
+    for path in built.iterdir():
+        shutil.move(path, OUT / path.name)
+    featurizers = {}
+    for name in FEATURIZERS:
+        fm = json.loads((OUT / f"{name}.json").read_text())
+        built_with = {
+            "lazysim": fm["lazysim_version"],
+            fm["engine"]: fm["engine_version"],
+        }
+        if "weights_sha256" in fm:
+            built_with["weights_sha256"] = fm["weights_sha256"]
+        featurizers[name] = {
+            "similarity": fm["similarity"],
+            "built_with": built_with,
+            "files": describe(OUT / fm["index_file"], OUT / f"{name}.json"),
+            "embeddings": describe(OUT / f"{name}_embeddings.npy"),
+        }
     catalog = published_catalog()
     catalog["libraries"][NAME] = {
         "title": TITLE,
@@ -121,16 +134,10 @@ def publish(built):
         "molecules": manifest["library"]["indexed"],
         "source": SOURCE,
         "license": "GPL-3.0 (ersilia-model-hub-maintained-inputs)",
-        "built_with": {
-            "lazysim": lazy_sim.__version__,
-            "turbovec": version("turbovec"),
-            "featurizer": clamp.NAME,
-            "weights_sha256": clamp.WEIGHTS_SHA256,
-        },
-        "files": {
-            "library": describe(*(OUT / name for name in searchable)),
-            "embeddings": describe(OUT / "clamp_embeddings.npy"),
-        },
+        "files": describe(
+            *(OUT / n for n in ("library.db", "skipped.csv", "manifest.json"))
+        ),
+        "featurizers": featurizers,
     }
     catalog_path = LIBRARIES / "catalog.json"
     catalog_path.write_text(json.dumps(catalog, indent=2))
@@ -140,7 +147,7 @@ def publish(built):
 def main():
     library_csv = prepare_input()
     built = BUILD / "index"
-    lazy_sim.index(library_csv, built, embeddings=True)
+    lazy_sim.index(library_csv, built, featurizers=FEATURIZERS, embeddings=True)
     publish(built)
 
 

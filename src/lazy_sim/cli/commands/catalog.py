@@ -16,43 +16,59 @@ def _local_table():
     if not libraries:
         return None
     table = Table(title=f"Libraries in {home.libraries_dir()}")
-    for column in ("Name", "Molecules", "Embeddings", "Size"):
+    for column in ("Name", "Featurizer", "Similarity", "Molecules", "Embeddings"):
         table.add_column(column, no_wrap=True)
+    table.add_column("Size", no_wrap=True)
     table.add_column("Source")
     table.add_column("Created", no_wrap=True)
     for name, path, m in libraries:
-        feat = m["featurizer"]["name"]
-        has_embeddings = (path / artifacts.embeddings_file(feat)).exists()
-        table.add_row(
-            name,
-            f"{m['library']['indexed']:,}",
-            "yes" if has_embeddings else "no",
-            artifacts.disk_size(path),
-            source(m),
-            m["created"][:10],
-        )
+        for featurizer in artifacts.featurizers_in(path) or ["—"]:
+            fm = (
+                artifacts.read_featurizer(path, featurizer) if featurizer != "—" else {}
+            )
+            emb = (path / artifacts.embeddings_file(featurizer)).exists()
+            table.add_row(
+                name,
+                featurizer,
+                fm.get("similarity", "—"),
+                f"{m['library']['indexed']:,}",
+                "yes" if emb else "no",
+                artifacts.files_size(artifacts.featurizer_files(path, featurizer)),
+                source(m),
+                fm.get("created", m["created"])[:10],
+            )
     return table
 
 
 def _remote_table():
     catalog = run_or_fail(remote.read_catalog)
-    local = {name for name, _, _ in home.list_local()}
-    table = Table(title="Libraries to fetch with 'lazysim fetch NAME'")
+    local = {
+        (name, f)
+        for name, path, _ in home.list_local()
+        for f in artifacts.featurizers_in(path)
+    }
+    shared = ", ".join(f"{n} {_gb(e['files'])}" for n, e in sorted(catalog.items()))
+    table = Table(
+        title="Libraries to fetch with 'lazysim fetch NAME [-f FEATURIZER]'",
+        caption=f"Each library also downloads its ids and SMILES once ({shared}).",
+    )
     table.add_column("Name", no_wrap=True)
     table.add_column("Title")
-    for column in ("Version", "Molecules", "Download", "Embeddings", "Fetched"):
+    for column in ("Featurizer", "Similarity", "Molecules", "Index", "Embeddings"):
         table.add_column(column, no_wrap=True)
+    table.add_column("Fetched", no_wrap=True)
     for name, entry in sorted(catalog.items()):
-        files = entry["files"]
-        table.add_row(
-            name,
-            entry["title"],
-            entry["version"],
-            f"{entry['molecules']:,}",
-            _gb(files["library"]),
-            _gb(files.get("embeddings", [])),
-            "yes" if name in local else "no",
-        )
+        for featurizer, published in sorted(entry["featurizers"].items()):
+            table.add_row(
+                name,
+                entry["title"],
+                featurizer,
+                published["similarity"],
+                f"{entry['molecules']:,}",
+                _gb(published["files"]),
+                _gb(published.get("embeddings", [])),
+                "yes" if (name, featurizer) in local else "no",
+            )
     return table
 
 
@@ -65,7 +81,10 @@ def catalog_cmd():
         help="List the libraries Ersilia publishes, instead of local ones.",
     )
     def catalog(show_remote):
-        """List libraries in ~/lazysim/libraries, or with --remote, ones to fetch."""
+        """List libraries in ~/lazysim/libraries, or with --remote, ones to fetch.
+
+        There is one row per library and featurizer.
+        """
         console = Console()
         table = _remote_table() if show_remote else _local_table()
         if table is None:

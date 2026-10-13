@@ -1,18 +1,22 @@
-"""The artifacts folder that holds an indexed library.
+"""The artifacts folder that holds a library and one index per featurizer.
 
 The featurizer weights are not in it: they are shared, in ``~/lazysim/models``.
 
 Layout
 ------
-manifest.json               what was indexed, how, and with which versions (last)
-<featurizer>.tv             turbovec index; slot i is row i of library.db
+manifest.json               the library: input file, counts, versions (written last)
 library.db                  SQLite table ``library(row, id, smiles)``
-skipped.csv                 input rows that could not be embedded
-<featurizer>_embeddings.npy optional full float32 embeddings, rows as in library.db
+skipped.csv                 input rows that could not be parsed
+<featurizer>.json           how that featurizer's index was built (written last)
+<featurizer>.<ext>          its index; slot or id i is row i of library.db
+<featurizer>_embeddings.npy optional full embeddings, row i is row i of library.db
+
+A featurizer is available when its ``.json`` exists.
 """
 
 import json
 import os
+import random
 import sqlite3
 from pathlib import Path
 
@@ -23,41 +27,32 @@ SKIPPED_COLUMNS = ("input_row", "id", "smiles", "reason")
 _SQL_BATCH = 900
 
 
-def index_file(featurizer):
-    """Return the index file name for `featurizer`."""
-    return f"{featurizer}.tv"
+def featurizer_file(featurizer):
+    """Return the name of `featurizer`'s manifest file."""
+    return f"{featurizer}.json"
 
 
 def embeddings_file(featurizer):
-    """Return the embeddings file name for `featurizer`."""
+    """Return the name of `featurizer`'s embeddings file."""
     return f"{featurizer}_embeddings.npy"
 
 
-def open_embeddings(path, rows, dim):
-    """Create a float32 ``.npy`` file for up to `rows` embeddings, as a memmap."""
+def open_embeddings(path, rows, width, dtype):
+    """Create a ``.npy`` file of shape ``(rows, width)``, opened as a memmap."""
     import numpy as np  # lazy: the CLI imports this module before thread setup
 
-    return np.lib.format.open_memmap(path, "w+", np.float32, (rows, dim))
+    return np.lib.format.open_memmap(path, "w+", np.dtype(dtype), (rows, width))
 
 
-def shrink_embeddings(path, rows, dim):
-    """Keep only the first `rows` rows of a file made by `open_embeddings`."""
-    import numpy as np
-
-    with open(path, "r+b") as fh:
-        np.lib.format.read_magic(fh)
-        np.lib.format.read_array_header_1_0(fh)
-        offset = fh.tell()
-        header = repr({"descr": "<f4", "fortran_order": False, "shape": (rows, dim)})
-        fh.seek(10)  # magic string, version and header length come first
-        fh.write(header.ljust(offset - 11).encode("latin1") + b"\n")
-        fh.truncate(offset + rows * dim * 4)
-
-
-def disk_size(path):
-    """Return the total size of the files in `path`, formatted in MB or GB."""
-    total = sum(f.stat().st_size for f in Path(path).iterdir() if f.is_file())
+def files_size(paths):
+    """Return the total size of `paths`, formatted in MB or GB."""
+    total = sum(Path(p).stat().st_size for p in paths if Path(p).is_file())
     return f"{total / 1e9:.2f} GB" if total >= 1e9 else f"{total / 1e6:.1f} MB"
+
+
+def featurizer_files(path, featurizer):
+    """Return the files in `path` that belong to `featurizer`."""
+    return [f for f in Path(path).iterdir() if f.stem.split("_")[0] == featurizer]
 
 
 def prepare_dir(path):
@@ -69,11 +64,15 @@ def prepare_dir(path):
     return path
 
 
+def _write_json(path, data):
+    tmp = Path(str(path) + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(tmp, path)
+
+
 def write_manifest(path, manifest):
-    """Write ``manifest.json`` atomically; its presence marks a finished index."""
-    tmp = Path(path) / (MANIFEST + ".tmp")
-    tmp.write_text(json.dumps(manifest, indent=2))
-    os.replace(tmp, Path(path) / MANIFEST)
+    """Write ``manifest.json`` atomically; its presence marks a finished library."""
+    _write_json(Path(path) / MANIFEST, manifest)
 
 
 def read_manifest(path):
@@ -87,14 +86,29 @@ def read_manifest(path):
     Returns
     -------
     dict
-        The manifest.
+        The library manifest.
     """
     file = Path(path) / MANIFEST
     if not file.exists():
         raise FileNotFoundError(
-            f"No {MANIFEST} in {path}: not a lazy-sim index, or indexing did not finish"
+            f"No {MANIFEST} in {path}: not a lazy-sim library, or it did not finish"
         )
     return json.loads(file.read_text())
+
+
+def write_featurizer(path, featurizer, manifest):
+    """Write ``<featurizer>.json`` atomically; it marks a finished index."""
+    _write_json(Path(path) / featurizer_file(featurizer), manifest)
+
+
+def read_featurizer(path, featurizer):
+    """Read ``<featurizer>.json`` from an artifacts folder."""
+    return json.loads((Path(path) / featurizer_file(featurizer)).read_text())
+
+
+def featurizers_in(path):
+    """Return the names of the featurizers whose index in `path` is finished."""
+    return sorted(f.stem for f in Path(path).glob("*.json") if f.name != MANIFEST)
 
 
 def create_library_db(path):
@@ -108,6 +122,29 @@ def open_library_db(path):
     """Open ``library.db`` read-only."""
     uri = (Path(path) / LIBRARY_DB).resolve().as_uri() + "?mode=ro"
     return sqlite3.connect(uri, uri=True)
+
+
+def count_rows(con):
+    """Return the number of molecules in ``library.db``."""
+    return con.execute("SELECT COUNT(*) FROM library").fetchone()[0]
+
+
+def iter_library(con, size):
+    """Yield lists of at most `size` ``(row, smiles)``, in row order."""
+    start, n = 0, count_rows(con)
+    while start < n:
+        query = (
+            "SELECT row, smiles FROM library WHERE row >= ? AND row < ? ORDER BY row"
+        )
+        yield con.execute(query, (start, start + size)).fetchall()
+        start += size
+
+
+def sample_smiles(con, n, seed=0):
+    """Return the SMILES of `n` rows of ``library.db`` drawn at random (all if fewer)."""
+    total = count_rows(con)
+    rows = sorted(random.Random(seed).sample(range(total), min(n, total)))
+    return [smiles for _, (_, smiles) in sorted(lookup(con, rows).items())]
 
 
 def lookup(con, rows):

@@ -1,6 +1,7 @@
 import click
 
 from ... import __version__
+from ...featurizers import AVAILABLE, DEFAULT
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
@@ -38,3 +39,21 @@ def library_option(help):
         metavar="NAME|PATH",
         help=help,
     )
+
+
+featurizers_option = click.option(
+    "-f",
+    "--featurizer",
+    "featurizers",
+    multiple=True,
+    default=[DEFAULT],
+    show_default=True,
+    type=click.Choice(AVAILABLE),
+    help="clamp (cosine) or ecfp (ECFP6, Tanimoto; needs lazy-sim[ecfp]). Repeatable.",
+)
+
+embeddings_option = click.option(
+    "--embeddings",
+    is_flag=True,
+    help="Also keep the full embeddings (CLAMP: 3 KB, ECFP: 256 B per molecule).",
+)

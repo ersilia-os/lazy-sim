@@ -1,8 +1,14 @@
-"""Featurizers that turn SMILES into L2-normalised embeddings."""
+"""Featurizers: how molecules are represented, and which engine searches them.
+
+Each featurizer module exposes ``NAME``, ``ENGINE`` (a module in
+`lazy_sim.engines`) and ``SIMILARITY`` (what the scores mean), plus whatever its
+engine needs to build an index and embed queries.
+"""
 
 import importlib
 
-AVAILABLE = ("clamp",)
+AVAILABLE = ("clamp", "ecfp")
+DEFAULT = "clamp"
 
 
 def get_featurizer(name):
@@ -16,8 +22,6 @@ def get_featurizer(name):
     Returns
     -------
     module
-        Exposes ``NAME``, ``DIM``, ``WEIGHTS_FILE``, ``WEIGHTS_SHA256``,
-        ``fingerprints``, ``ensure_weights``, ``load_weights`` and ``encode``.
     """
     if name not in AVAILABLE:
         raise ValueError(

@@ -1,9 +1,10 @@
 # Ultra-fast similarity search in large chemical libraries
 
-lazy-sim is a tool from the [Ersilia Open Source Initiative](https://ersilia.io). It finds the nearest neighbours of query molecules in a fixed library of millions of compounds. It embeds molecules with [CLAMP](https://github.com/ml-jku/clamp) and searches them with [turbovec](https://pypi.org/project/turbovec/), so it needs no GPU and no torch.
+lazy-sim is a tool from the [Ersilia Open Source Initiative](https://ersilia.io). It finds the nearest neighbours of query molecules in a fixed library of millions of compounds. It needs no GPU and no torch.
 
 ```bash
-pip install git+https://github.com/ersilia-os/lazy-sim.git
+pip install git+https://github.com/ersilia-os/lazy-sim.git            # CLAMP
+pip install "lazy-sim[ecfp] @ git+https://github.com/ersilia-os/lazy-sim.git"   # + ECFP
 ```
 
 lazy-sim needs Python 3.12 or later.
@@ -13,31 +14,41 @@ lazy-sim needs Python 3.12 or later.
 | Command | Description |
 |---|---|
 | `lazysim catalog --remote` | List the libraries Ersilia has already indexed |
-| `lazysim fetch ersilia-reference` | Download one, ready to search |
-| `lazysim index -i library.csv -a mylib` | Embed and index your own library, once |
-| `lazysim search -i queries.csv -a ersilia-reference -o hits.csv` | Top hits for each query (`-k`, default 100) |
+| `lazysim fetch ersilia-reference [-f ecfp]` | Download one, ready to search |
+| `lazysim index -i library.csv -a mylib [-f clamp -f ecfp]` | Index your own library, once |
+| `lazysim search -i queries.csv -a ersilia-reference -o hits.csv [-f ecfp]` | Top hits for each query (`-k`, default 100) |
 | `lazysim catalog` | List your local libraries |
 | `lazysim info -a ersilia-reference` | Describe a library |
 
 Input CSVs need `smiles` and `id` columns, and SMILES are used exactly as given. The output has one row per hit: `query_id, query_smiles, rank, hit_id, hit_smiles, similarity`.
 
+## Featurizers
+
+| `-f` | Molecules as | Similarity | Search engine |
+|---|---|---|---|
+| `clamp` (default) | [CLAMP](https://github.com/ml-jku/clamp) embeddings | cosine | [turbovec](https://pypi.org/project/turbovec/), 4-bit |
+| `ecfp` | ECFP6 (Morgan radius 3, 2048 bits) | exact Tanimoto | [FPSim2](https://github.com/chembl/FPSim2), needs `lazy-sim[ecfp]` |
+
+A library can hold both. `search` uses CLAMP unless you pass `-f ecfp`.
+
 ## Libraries
 
 - **Where they live.** A library name such as `ersilia-reference` refers to a folder in `~/lazysim/libraries/` (set `LAZYSIM_HOME` to move it). A path such as `-a ./mylib` works anywhere.
-- **What's inside.** Each library folder holds the index (`clamp.tv`), the ids and SMILES of the hits (`library.db`), and a `manifest.json` describing how it was built.
+- **What's inside.** The ids and SMILES (`library.db`) and a `manifest.json`, plus one index per featurizer (`clamp.tv`, `ecfp.h5`), each described by its own `.json`.
+- **Adding a featurizer.** `lazysim fetch NAME -f ecfp` or `lazysim index -a mylib -f ecfp` adds it to a library you already have.
 - **CLAMP weights.** The weights (174 MB) are downloaded once, the first time a command needs them, into `~/lazysim/models/`. All libraries share them.
-- **Full embeddings.** `--embeddings`, on `fetch` or `index`, also keeps the full float32 CLAMP vectors (3 KB per molecule) for your own analyses; `search` does not need them.
+- **Full embeddings.** `--embeddings`, on `fetch` or `index`, also keeps the full vectors for your own analyses: float32 CLAMP embeddings (3 KB per molecule) and packed ECFP bits (256 B, `np.unpackbits`). `search` does not need them.
 
 ## Performance
 
-Tested on a laptop with 16 threads, searching ChEMBL (2.9M compounds):
-- **1,000 queries take about 12 s** from start to finish and use 1.5 GB of memory.
-- **Accuracy:** the index keeps 4 bits per dimension, and the results include 96% of the exact top-100 (recall@100 0.96).
-- **Indexing** runs at about 2,300 molecules per second.
+Tested on a laptop with 16 threads:
+- **CLAMP on ChEMBL (2.9M compounds):** 1,000 queries take about 12 s from start to finish, using 1.5 GB of memory. The index keeps 4 bits per dimension, and the results include 96% of the exact top-100 (recall@100 0.96).
+- **ECFP on the Ersilia Reference Library (1.36M compounds):** 1,000 queries take about 8 s, and the Tanimoto values are exact.
+- **Indexing** runs at about 2,300 molecules per second for CLAMP.
 
 ## About the similarity score
 
-`similarity` is the cosine between CLAMP embeddings, not a Tanimoto coefficient. CLAMP was trained on bioactivity data, so the scores are compressed: random pairs score around 0.5, and close analogues score above 0.9.
+For CLAMP, `similarity` is the cosine between embeddings, not a Tanimoto coefficient. CLAMP was trained on bioactivity data, so the scores are compressed: random pairs score around 0.5, and close analogues score above 0.9. For ECFP, it is the usual Tanimoto coefficient.
 
 ## CLAMP
 

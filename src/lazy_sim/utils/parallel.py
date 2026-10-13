@@ -1,4 +1,4 @@
-"""Thread settings and a process pool that fingerprints one chunk ahead."""
+"""Thread settings and a process pool that works one chunk ahead of its caller."""
 
 import multiprocessing as mp
 import os
@@ -24,13 +24,13 @@ def set_threads(threads):
             os.environ[var] = str(threads)
 
 
-class FingerprintPool:
-    """Compute fingerprints in worker processes, one chunk ahead of the caller.
+class ChunkPool:
+    """Map a function over SMILES in worker processes, one chunk ahead of the caller.
 
     Parameters
     ----------
     func : callable
-        Module-level function mapping a list of SMILES to a list of fingerprints.
+        Module-level function mapping a list of SMILES to a list of results.
     processes : int
         Worker processes; 1 computes in the calling process.
     """
@@ -66,14 +66,14 @@ class FingerprintPool:
         return [fp for batch in pending.get() for fp in batch]
 
     def map(self, smiles):
-        """Return the fingerprints of `smiles`, in order."""
+        """Return `func` applied to `smiles`, in order."""
         return self._collect(self._submit(list(smiles)))
 
     def iter_chunks(self, chunks):
-        """Yield ``(chunk, fingerprints)`` for chunks of ``(id, smiles)`` rows.
+        """Yield ``(chunk, results)`` for chunks of ``(key, smiles)`` rows.
 
         The next chunk is read and sent to the workers before the current one
-        is handed back, so fingerprinting overlaps with the caller's work.
+        is handed back, so the workers overlap with the caller's work.
         """
         chunks = iter(chunks)
         current = next(chunks, None)

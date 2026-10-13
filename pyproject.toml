@@ -26,6 +26,9 @@ Homepage = "https://github.com/ersilia-os/lazy-sim"
 Ersilia = "https://ersilia.io"
 
 [project.optional-dependencies]
+ecfp = [
+  "FPSim2==0.7.4",
+]
 dev = [
   "pytest==9.0.3",
   "ruff==0.15.13",
