@@ -32,7 +32,7 @@ def _local_table():
                 featurizer,
                 fm.get("similarity", "—"),
                 f"{m['library']['indexed']:,}",
-                "yes" if emb else "no",
+                "Yes" if emb else "No",
                 artifacts.files_size(artifacts.featurizer_files(path, featurizer)),
                 source(m),
                 fm.get("created", m["created"])[:10],
@@ -67,7 +67,7 @@ def _remote_table():
                 f"{entry['molecules']:,}",
                 _gb(published["files"]),
                 _gb(published.get("embeddings", [])),
-                "yes" if (name, featurizer) in local else "no",
+                "Yes" if (name, featurizer) in local else "No",
             )
     return table
 

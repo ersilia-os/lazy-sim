@@ -206,8 +206,10 @@ def test_fetch_and_catalog(library, home, tmp_path, monkeypatch):
 
     assert "tiny" in _run("catalog", "--remote")
     assert "No libraries" in _run("catalog")
-    _run("fetch", "tiny", "--embeddings")
+    _run("fetch", "tiny")
     fetched = home / "libraries" / "tiny"
+    assert not (fetched / "clamp_embeddings.npy").exists()
+    _run("fetch", "tiny", "--embeddings")  # adds them to the library already here
     assert (fetched / "clamp_embeddings.npy").exists()
     assert not (fetched / "ecfp.json").exists()
     if HAS_FPSIM2:

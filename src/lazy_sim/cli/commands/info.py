@@ -48,7 +48,7 @@ def info_cmd():
                 name,
                 fm["similarity"],
                 _engine(fm),
-                "yes" if emb else "no",
+                "Yes" if emb else "No",
                 artifacts.files_size(artifacts.featurizer_files(folder, name)),
             )
         console.print(indexes)

@@ -180,7 +180,7 @@ def fetch(name, artifacts_dir=None, featurizers=DEFAULT, embeddings=False):
         if built and built != get_featurizer(n).WEIGHTS_SHA256:
             raise ValueError(f"{name} ({n}) needs a different lazy-sim version")
     folder = home.resolve(artifacts_dir or name)
-    items = []
+    items, present = [], []
     if (folder / artifacts.MANIFEST).exists():
         local = remote.sha256(folder / artifacts.MANIFEST)
         published = next(
@@ -189,7 +189,6 @@ def fetch(name, artifacts_dir=None, featurizers=DEFAULT, embeddings=False):
         if local != published["sha256"]:
             raise FileExistsError(f"{folder} holds a different library")
         present = artifacts.featurizers_in(folder)
-        names = [n for n in names if n not in present]
     else:
         folder = artifacts.prepare_dir(folder)
         # The library manifest goes last: a folder without one is unfinished.
@@ -198,9 +197,14 @@ def fetch(name, artifacts_dir=None, featurizers=DEFAULT, embeddings=False):
         )
     for n in names:
         published = entry["featurizers"][n]
-        files = published["files"] + (
-            published.get("embeddings", []) if embeddings else []
-        )
+        # An index already here is kept; only its missing embeddings are added.
+        files = [] if n in present else list(published["files"])
+        if embeddings:
+            files += [
+                f
+                for f in published.get("embeddings", [])
+                if not (folder / Path(f["path"]).name).exists()
+            ]
         # Each featurizer's manifest goes last, marking its index as complete.
         items += sorted(files, key=lambda f: f["path"].endswith(f"/{n}.json"))
     downloads = [
