@@ -3,19 +3,27 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "my-package"
+name = "lazy-sim"
 version = "0.1.0"
-description = "A short description of my package"
+description = "Ultra-fast similarity search in large chemical libraries, by the Ersilia Open Source Initiative"
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [
-  {name="Your Name", email="you@ersilia.io"}
+  {name="Ersilia Open Source Initiative", email="hello@ersilia.io"}
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 
 dependencies = [
-  "numpy==2.2.6",
+  "click==8.5.0",
+  "numpy==2.5.3",
+  "rdkit==2026.3.6",
+  "rich==15.0.0",
+  "turbovec==1.1.2",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ersilia-os/lazy-sim"
+Ersilia = "https://ersilia.io"
 
 [project.optional-dependencies]
 dev = [
@@ -23,9 +31,18 @@ dev = [
   "ruff==0.15.13",
 ]
 
+[project.scripts]
+lazysim = "lazy_sim.cli:cli"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
