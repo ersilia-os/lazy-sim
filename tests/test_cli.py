@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from click.testing import CliRunner
+from rdkit import Chem
 
 from lazy_sim.cli import cli
 from lazy_sim.featurizers import clamp, ecfp
@@ -101,6 +102,25 @@ def test_search_and_info(library, tmp_path):
         assert float(top["similarity"]) > 0.99
     assert "200" in _run("info", "-a", library)
     assert "torch" not in sys.modules
+
+
+def test_search_without_ids(library, tmp_path):
+    smiles_only = tmp_path / "smiles.csv"
+    with open(smiles_only, "w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["smiles"])
+        writer.writerows([q["smiles"]] for q in _members())
+        writer.writerow(["C1CC"])  # invalid: skipped, reported as row-6
+    hits_csv = tmp_path / "hits.csv"
+    result = CliRunner().invoke(
+        cli, ["search", "-i", str(smiles_only), "-a", str(library), "-o", str(hits_csv)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "row-6" in result.output
+    ids = {h["query_id"] for h in _read(hits_csv)}
+    assert ids == {
+        Chem.MolToInchiKey(Chem.MolFromSmiles(q["smiles"])) for q in _members()
+    }
 
 
 @needs_fpsim2

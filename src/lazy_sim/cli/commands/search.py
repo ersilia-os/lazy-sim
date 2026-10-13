@@ -13,7 +13,7 @@ def search_cmd():
         "input_csv",
         required=True,
         type=click.Path(exists=True, dir_okay=False),
-        help="Query CSV with 'smiles' and 'id' columns.",
+        help="Query CSV with a 'smiles' column; 'id' is optional (InChIKey if missing).",
     )
     @library_option("Library name or folder, from 'lazysim index' or 'fetch'.")
     @click.option(

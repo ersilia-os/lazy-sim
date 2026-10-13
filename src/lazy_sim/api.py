@@ -13,7 +13,7 @@ from . import __version__
 from .engines import get_engine
 from .featurizers import DEFAULT, get_featurizer
 from .io import artifacts, home, remote, tables
-from .utils.chem import validate
+from .utils.chem import inchikey, validate
 from .utils.logging import console, logger
 from .utils.parallel import ChunkPool, set_threads
 
@@ -266,7 +266,8 @@ def search(input_csv, artifacts_dir, output_csv, k=100, featurizer=None, threads
     Parameters
     ----------
     input_csv : str or Path
-        Query CSV with ``smiles`` and ``id`` columns.
+        Query CSV with a ``smiles`` column and, optionally, ``id``. Without
+        ``id``, each query is named by its InChIKey (or ``row-<n>``).
     artifacts_dir : str or Path
         Library name (in ``~/lazysim/libraries``) or artifacts folder path.
     output_csv : str or Path
@@ -293,24 +294,32 @@ def search(input_csv, artifacts_dir, output_csv, k=100, featurizer=None, threads
     feat = get_featurizer(name)
     manifest = artifacts.read_featurizer(folder, name)
     _check_versions(manifest)
-    tables.check_columns(input_csv)
+    tables.check_columns(input_csv, require_id=False)
     start = time.perf_counter()
     n_library = artifacts.read_manifest(folder)["library"]["indexed"]
     k = min(k, n_library)
-    n_queries = sum(1 for _ in tables.iter_rows(input_csv))
+    n_queries = sum(1 for _ in tables.iter_rows(input_csv, require_id=False))
     workers = threads or os.cpu_count()
     con = artifacts.open_library_db(folder)
-    searched, invalid = 0, []
+    searched, seen, invalid = 0, 0, []
     engine = get_engine(feat.ENGINE)
     with (
         engine.Searcher(feat, folder, manifest, workers, n_queries) as searcher,
         open(output_csv, "w", newline="") as fh,
     ):
         writer = tables.hits_writer(fh)
-        for chunk in tables.iter_chunks(input_csv, QUERY_CHUNK):
+        chunks = tables.iter_chunks(input_csv, QUERY_CHUNK, require_id=False)
+        for chunk in chunks:
             ok = validate([smiles for _, smiles in chunk])
-            invalid += [mol_id for (mol_id, _), good in zip(chunk, ok) if not good]
-            queries = [row for row, good in zip(chunk, ok) if good]
+            queries = []
+            for n, ((query_id, smiles), good) in enumerate(zip(chunk, ok), seen + 1):
+                if query_id is None:  # no id column: name queries by InChIKey
+                    query_id = (good and inchikey(smiles)) or f"row-{n}"
+                if good:
+                    queries.append((query_id, smiles))
+                else:
+                    invalid.append(query_id)
+            seen += len(chunk)
             if not queries:
                 continue
             results = searcher.search([smiles for _, smiles in queries], k)

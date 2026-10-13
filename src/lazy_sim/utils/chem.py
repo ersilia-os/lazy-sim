@@ -15,3 +15,12 @@ def validate(smiles_list):
     """Apply `is_valid` to a list of SMILES, with RDKit messages silenced."""
     _block = rdBase.BlockLogs()  # noqa: F841 (silences RDKit while alive)
     return [is_valid(s) for s in smiles_list]
+
+
+def inchikey(smiles):
+    """Return the InChIKey of a valid SMILES, or None if RDKit cannot make one."""
+    _block = rdBase.BlockLogs()  # noqa: F841
+    try:
+        return Chem.MolToInchiKey(Chem.MolFromSmiles(smiles)) or None
+    except Exception:
+        return None

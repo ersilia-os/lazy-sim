@@ -20,7 +20,7 @@ lazy-sim needs Python 3.12 or later.
 | `lazysim catalog` | List your local libraries |
 | `lazysim info -a ersilia-reference` | Describe a library |
 
-Input CSVs need `smiles` and `id` columns, and SMILES are used exactly as given. The output has one row per hit: `query_id, query_smiles, rank, hit_id, hit_smiles, similarity`.
+Library CSVs need `smiles` and `id` columns. Query CSVs need `smiles`; `id` is optional, and queries without one are named by their InChIKey. SMILES are used exactly as given. The output has one row per hit: `query_id, query_smiles, rank, hit_id, hit_smiles, similarity`.
 
 ## Featurizers
 
