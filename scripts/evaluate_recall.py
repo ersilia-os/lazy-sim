@@ -1,34 +1,60 @@
-"""Maintainer script: measure how many true nearest neighbours CLAMP search returns.
+"""Maintainer script: measure how many true nearest neighbours lazy-sim search returns.
 
-The library needs its CLAMP embeddings (``lazysim fetch NAME --embeddings``): they
-give the exact answer, the cosine of each query against every library molecule.
+The library needs the featurizer's embeddings (``lazysim fetch NAME -f FEATURIZER
+--embeddings``): they give the exact answer, the similarity of each query to every
+library molecule (cosine for CLAMP, Tanimoto for ECFP).
 
 1. Draw random library molecules as queries (seeded).
 2. Search them with ``lazy_sim.search``, as ``lazysim search`` does, for k + 1 hits
-   (the largest k asked for).
+   (k being the largest asked for).
 3. Compute the exact k + 1 nearest neighbours from the stored embeddings.
-4. Drop each query's own row from both lists. For each k asked for, recall@k is the
-   share of the true k nearest neighbours that lazy-sim also returned in its top k,
-   averaged over the queries. The score error compares lazy-sim's similarity with
-   the exact cosine of the same pair.
+4. Drop each query's own row from both lists. Recall@k is the share of lazy-sim's
+   top k that are true top-k neighbours, averaged over the queries. A hit counts
+   when its exact similarity is at least that of the true k-th neighbour, so
+   molecules tied at the cut-off are interchangeable (common with Tanimoto). The
+   score error compares lazy-sim's similarity with the exact one for the same pair.
+
+``evaluate_speed.py`` measures how long both searches take.
 
 Usage
 -----
-python scripts/evaluate_recall.py ersilia-reference -k 1,10,100,1000
+python scripts/evaluate_recall.py ersilia-reference -f clamp -k 1,10,100,1000
 """
 
 import argparse
 import csv
+import os
 import tempfile
-import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
+from rich.console import Console
+from rich.table import Table
 
 import lazy_sim
+from lazy_sim.featurizers import AVAILABLE, DEFAULT
 from lazy_sim.io import artifacts, home
 
 CHUNK = 20_000
+TIE = 1e-6  # similarities closer than this are a tie
+
+
+def cosine(queries, block):
+    """Cosine of unit-length float32 embeddings."""
+    return queries @ block.T
+
+
+def tanimoto(queries, block):
+    """Tanimoto of packed bit fingerprints (rows of ``np.packbits``)."""
+    q = np.unpackbits(queries, axis=1).astype(np.float32)
+    b = np.unpackbits(block, axis=1).astype(np.float32)
+    common = q @ b.T
+    union = q.sum(axis=1)[:, None] + b.sum(axis=1) - common
+    return np.divide(common, union, out=np.zeros_like(common), where=union > 0)
+
+
+SIMILARITY = {"clamp": cosine, "ecfp": tanimoto}
 
 
 def neighbour_counts(value):
@@ -49,22 +75,46 @@ def draw_queries(con, n, seed):
     return rows, artifacts.lookup(con, rows)
 
 
-def exact_top(embeddings, queries, k):
-    """Return the rows and cosines of the `k` nearest library molecules, best first."""
-    rows = np.empty((len(queries), 0), np.int64)
-    scores = np.empty((len(queries), 0), np.float32)
-    for start in range(0, len(embeddings), CHUNK):
-        block = queries @ np.asarray(embeddings[start : start + CHUNK]).T
-        scores = np.concatenate([scores, block], axis=1)
-        block_rows = np.arange(start, start + block.shape[1])
-        rows = np.concatenate([rows, np.broadcast_to(block_rows, block.shape)], axis=1)
-        if scores.shape[1] > k:
-            keep = np.argpartition(-scores, k - 1, axis=1)[:, :k]
-            rows = np.take_along_axis(rows, keep, axis=1)
-            scores = np.take_along_axis(scores, keep, axis=1)
-    order = np.argsort(-scores, axis=1, kind="stable")
-    return np.take_along_axis(rows, order, axis=1), np.take_along_axis(
-        scores, order, axis=1
+def _keep_best(scores, rows, k):
+    if scores.shape[1] > k:
+        cols = np.argpartition(-scores, k - 1, axis=1)[:, :k]
+        scores = np.take_along_axis(scores, cols, axis=1)
+        rows = np.take_along_axis(rows, cols, axis=1)
+    return scores, rows
+
+
+def exact_search(embeddings, queries, k, threads, similarity):
+    """Return the similarities and rows of the `k` nearest molecules, best first.
+
+    The embeddings are read chunk by chunk; each thread keeps the best hits of its
+    share of the queries.
+    """
+    parts = np.array_split(np.arange(len(queries)), min(threads, len(queries)))
+    best = [
+        (np.empty((len(p), 0), np.float32), np.empty((len(p), 0), np.int64))
+        for p in parts
+    ]
+    with ThreadPoolExecutor(threads) as pool:
+        for start in range(0, len(embeddings), CHUNK):
+            block = similarity(queries, np.asarray(embeddings[start : start + CHUNK]))
+            ids = np.arange(start, start + block.shape[1])
+
+            def merge(i):
+                scores, rows = best[i]
+                part = block[parts[i]]
+                return _keep_best(
+                    np.concatenate([scores, part], axis=1),
+                    np.concatenate([rows, np.broadcast_to(ids, part.shape)], axis=1),
+                    k,
+                )
+
+            best = list(pool.map(merge, range(len(parts))))
+    scores = np.concatenate([s for s, _ in best])
+    rows = np.concatenate([r for _, r in best])
+    order = np.argsort(-scores, axis=1)
+    return (
+        np.take_along_axis(scores, order, axis=1),
+        np.take_along_axis(rows, order, axis=1),
     )
 
 
@@ -85,14 +135,10 @@ def rows_of(con, ids):
     return {i: r for r, i in con.execute("SELECT row, id FROM library") if i in ids}
 
 
-def without(rows, row, k):
-    """Return the first `k` of `rows`, leaving `row` (the query itself) out."""
-    return [r for r in rows if r != row][:k]
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("library", help="Library name or folder.")
+    parser.add_argument("-f", "--featurizer", choices=AVAILABLE, default=DEFAULT)
     parser.add_argument(
         "-k",
         type=neighbour_counts,
@@ -103,10 +149,19 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("-t", "--threads", type=int)
     args = parser.parse_args()
-    k = args.k[-1]
+    k, featurizer = args.k[-1], args.featurizer
+    similarity = SIMILARITY.get(featurizer)
+    if similarity is None:
+        parser.error(f"no exact search for {featurizer} in this script yet")
 
     folder = home.resolve(args.library, must_exist=True)
-    embeddings = np.load(folder / artifacts.embeddings_file("clamp"), mmap_mode="r")
+    embeddings_npy = folder / artifacts.embeddings_file(featurizer)
+    if not embeddings_npy.exists():
+        parser.error(
+            f"{folder} has no {embeddings_npy.name}: lazysim fetch NAME "
+            f"-f {featurizer} --embeddings"
+        )
+    embeddings = np.load(embeddings_npy, mmap_mode="r")
     con = artifacts.open_library_db(folder)
     rows, molecules = draw_queries(con, args.queries, args.seed)
 
@@ -116,42 +171,47 @@ def main():
             writer = csv.writer(fh)
             writer.writerow(["id", "smiles"])
             writer.writerows(molecules[int(r)] for r in rows)
-        start = time.perf_counter()
         lazy_sim.search(
             queries_csv,
             folder,
             hits_csv,
             k=k + 1,
-            featurizer="clamp",
+            featurizer=featurizer,
             threads=args.threads,
         )
-        search_s = time.perf_counter() - start
         with open(hits_csv, newline="") as fh:
             hit_ids = {hit["hit_id"] for hit in csv.DictReader(fh)}
         found = lazysim_top(hits_csv, rows_of(con, hit_ids))
     con.close()
 
     q_vectors = np.asarray(embeddings[rows])
-    true_rows, _ = exact_top(embeddings, q_vectors, k + 1)
+    threads = args.threads or os.cpu_count()
+    true_scores, true_rows = exact_search(
+        embeddings, q_vectors, k + 1, threads, similarity
+    )
 
     recall = {n: [] for n in args.k}
     errors = []
     for i, row in enumerate(rows):
-        query_id = molecules[int(row)][0]
-        got_rows, got_scores = found[query_id]
-        got = without(got_rows, row, k)
-        true = without(true_rows[i].tolist(), row, k)
-        for n in args.k:
-            recall[n].append(len(set(got[:n]) & set(true[:n])) / n)
-        exact = embeddings[np.array(got_rows)] @ q_vectors[i]
+        got_rows, got_scores = found[molecules[int(row)][0]]
+        got_rows = np.array(got_rows)
+        exact = similarity(q_vectors[i : i + 1], embeddings[got_rows])[0]
         errors.extend(np.abs(np.array(got_scores) - np.minimum(exact, 1.0)))
+        got = exact[got_rows != row][:k]  # exact similarity of lazy-sim's hits
+        true = true_scores[i][true_rows[i] != row][:k]
+        for n in args.k:
+            recall[n].append(np.sum(got[:n] >= true[n - 1] - TIE) / n)
 
-    print(
-        f"{folder.name}: {len(rows):,} queries, {k + 1} hits each in {search_s:.1f} s"
-    )
+    console = Console()
+    queries = "1 query" if len(rows) == 1 else f"{len(rows):,} queries"
+    console.print(f"{folder.name}, {featurizer}: {queries}, {k + 1} hits each")
+    table = Table()
+    table.add_column("k", justify="right")
+    table.add_column("Recall@k", justify="right")
     for n in args.k:
-        print(f"recall@{n} = {np.mean(recall[n]):.4f}")
-    print(f"score error: mean {np.mean(errors):.4f}, max {np.max(errors):.4f}")
+        table.add_row(f"{n:,}", f"{np.mean(recall[n]):.4f}")
+    console.print(table)
+    console.print(f"Score error: mean {np.mean(errors):.4f}, max {np.max(errors):.4f}")
 
 
 if __name__ == "__main__":
