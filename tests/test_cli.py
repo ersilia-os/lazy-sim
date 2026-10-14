@@ -1,7 +1,8 @@
-"""Smoke tests for the lazysim CLI, plus parity with the original CLAMP.
+"""Smoke tests for the lazysim CLI, plus parity with the original CLAMP and SAND.
 
-The tests use a temporary lazy-sim home. The CLAMP weights are downloaded into it
-once, unless ``LAZYSIM_CLAMP_WEIGHTS`` points to a local copy. Everything else runs
+The tests use a temporary lazy-sim home. The CLAMP and SAND weights are downloaded
+into it once, unless ``LAZYSIM_CLAMP_WEIGHTS`` and ``LAZYSIM_SAND_WEIGHTS`` point to
+local copies. Everything else runs
 offline: ``fetch`` reads a catalog of file:// URLs. The ECFP parts need the
 ``[ecfp]`` extra and are skipped without it.
 """
@@ -19,14 +20,14 @@ from click.testing import CliRunner
 from rdkit import Chem
 
 from lazy_sim.cli import cli
-from lazy_sim.featurizers import clamp, ecfp
+from lazy_sim.featurizers import clamp, ecfp, sand
 from lazy_sim.io.remote import sha256
 from lazy_sim.io.tables import HITS_COLUMNS
 
 DATA = Path(__file__).parent / "data"
 K = 10
 HAS_FPSIM2 = importlib.util.find_spec("FPSim2") is not None
-FEATURIZERS = ["clamp", "ecfp"] if HAS_FPSIM2 else ["clamp"]
+FEATURIZERS = ["clamp", "ecfp", "sand"] if HAS_FPSIM2 else ["clamp", "sand"]
 needs_fpsim2 = pytest.mark.skipif(not HAS_FPSIM2, reason="needs lazy-sim[ecfp]")
 
 
@@ -82,9 +83,10 @@ def test_index(library):
     )
     assert not (library / clamp.WEIGHTS_FILE).exists()
     assert sha256(clamp.ensure_weights()) == clamp.WEIGHTS_SHA256
-    embeddings = np.load(library / "clamp_embeddings.npy")
-    assert embeddings.shape == (200, clamp.DIM)
-    assert np.allclose(np.linalg.norm(embeddings, axis=1), 1, atol=1e-5)
+    for feat in (clamp, sand):
+        embeddings = np.load(library / f"{feat.NAME}_embeddings.npy")
+        assert embeddings.shape == (200, feat.DIM)
+        assert np.allclose(np.linalg.norm(embeddings, axis=1), 1, atol=1e-5)
     if HAS_FPSIM2:
         bits = np.load(library / "ecfp_embeddings.npy")
         assert bits.shape == (200, ecfp.DIM // 8) and bits.dtype == np.uint8
@@ -97,14 +99,15 @@ def test_search_and_info(library, tmp_path):
     assert (
         no_featurizer.exit_code != 0 and "Missing option '-f'" in no_featurizer.output
     )
-    _run(*args, "-k", K, "-f", "clamp")
-    hits = _read(hits_csv)
-    assert tuple(hits[0]) == HITS_COLUMNS
-    assert len(hits) == K * len(_members())
-    for q in _members():
-        top = next(h for h in hits if h["query_id"] == q["id"] and h["rank"] == "1")
-        assert top["hit_smiles"] == q["smiles"]
-        assert float(top["similarity"]) > 0.99
+    for featurizer in ("clamp", "sand"):
+        _run(*args, "-k", K, "-f", featurizer)
+        hits = _read(hits_csv)
+        assert tuple(hits[0]) == HITS_COLUMNS
+        assert len(hits) == K * len(_members())
+        for q in _members():
+            top = next(h for h in hits if h["query_id"] == q["id"] and h["rank"] == "1")
+            assert top["hit_smiles"] == q["smiles"]
+            assert float(top["similarity"]) > 0.99
     assert "200" in _run("info", "-a", library)
     assert "torch" not in sys.modules
 
@@ -237,8 +240,16 @@ def test_fetch_and_catalog(library, home, tmp_path, monkeypatch):
 
 
 def test_clamp_matches_original(home):
-    rows = _read(DATA / "clamp_reference.csv")
+    rows = _read(DATA / "reference_smiles.csv")
     reference = np.load(DATA / "clamp_reference.npy")
     fps = clamp.fingerprints([row["smiles"] for row in rows])
     embeddings = clamp.encode(clamp.load_weights(), fps)
+    assert np.abs(embeddings - reference).max() < 1e-5
+
+
+def test_sand_matches_original(home):
+    rows = _read(DATA / "reference_smiles.csv")
+    reference = np.load(DATA / "sand_reference.npy")
+    graphs = sand.fingerprints([row["smiles"] for row in rows])
+    embeddings = sand.encode(sand.load_weights(), graphs)
     assert np.abs(embeddings - reference).max() < 1e-5

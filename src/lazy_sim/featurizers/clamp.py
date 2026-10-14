@@ -9,15 +9,12 @@ CLAMP model terms: the model and its derivatives must not be used to exploit or
 harm, or to attempt to exploit or harm, in any way.
 """
 
-import os
-from pathlib import Path
-
 import numpy as np
 from rdkit import Chem, rdBase
 from rdkit.Chem import AllChem
 from rdkit.Chem.rdmolops import FastFindRings
 
-from ..io import home, remote
+from ..io import models
 
 NAME = "clamp"
 ENGINE = "turbovec"
@@ -109,15 +106,13 @@ def ensure_weights():
     -------
     Path
     """
-    local = os.environ.get("LAZYSIM_CLAMP_WEIGHTS")
-    path = Path(local) if local else home.models_dir() / WEIGHTS_FILE
-    if not path.exists():
-        if local:
-            raise FileNotFoundError(f"LAZYSIM_CLAMP_WEIGHTS points to {path}")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        item = (WEIGHTS_URL, path, WEIGHTS_SHA256, WEIGHTS_BYTES)
-        remote.download_files([item], "CLAMP weights")
-    return path
+    return models.ensure(
+        WEIGHTS_FILE,
+        WEIGHTS_URL,
+        WEIGHTS_SHA256,
+        WEIGHTS_BYTES,
+        "LAZYSIM_CLAMP_WEIGHTS",
+    )
 
 
 def load_weights():
@@ -128,11 +123,7 @@ def load_weights():
     dict of str to numpy.ndarray
         Weights ``w1, w2, w3`` (input x output) and biases ``b1, b2, b3``.
     """
-    path = ensure_weights()
-    if remote.sha256(path) != WEIGHTS_SHA256:
-        raise ValueError(f"{path} is not the expected CLAMP weights file; delete it")
-    with np.load(path) as z:
-        return {k: z[k] for k in z.files}
+    return models.load_npz(ensure_weights(), WEIGHTS_SHA256)
 
 
 def _layernorm(h, eps=1e-5):

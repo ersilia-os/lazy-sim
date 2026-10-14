@@ -2,16 +2,22 @@
 
 1. Download the Ersilia Reference Library (pinned commit) and check its sha256.
 2. Use each molecule's InChIKey as its id; SMILES are kept exactly as given.
-3. Index it with lazy-sim (CLAMP and ECFP), keeping the full embeddings.
+3. Index it with lazy-sim (CLAMP, ECFP and SAND), keeping the full embeddings.
 4. Lay the files out as on S3 under ``data/libraries/``, and write ``catalog.json``
    as the published one plus this library (so nobody else's entries are lost).
 
-Published versions are never edited: a rebuild goes in a new version folder.
+Published versions are never edited: a rebuild goes in a new version folder. The
+one exception is ``--add FEATURIZER``, which indexes the published library with
+one more featurizer. It only adds files (the featurizer's index, manifest and
+embeddings) and a catalog entry; the library's own files stay as published, so
+rows stay aligned for everyone who already fetched it.
 
 Usage
 -----
 LAZYSIM_CLAMP_WEIGHTS=data/clamp/clamp_compound_encoder_v1.npz \\
+    LAZYSIM_SAND_WEIGHTS=data/sand/sand_encoder_v1.npz \\
     python scripts/build_reference_library.py
+python scripts/build_reference_library.py --add sand
 
 Then upload with ``eosvc upload --path data/libraries``.
 """
@@ -20,6 +26,7 @@ import csv
 import json
 import multiprocessing as mp
 import shutil
+import sys
 import urllib.error
 import urllib.request
 from collections import Counter
@@ -28,10 +35,11 @@ from pathlib import Path
 from rdkit import Chem, rdBase
 
 import lazy_sim
+from lazy_sim.io import artifacts, remote
 from lazy_sim.io.remote import catalog_url, sha256
 
 NAME, VERSION, TITLE = "ersilia-reference", "v1", "Ersilia Reference Library"
-FEATURIZERS = ["clamp", "ecfp"]
+FEATURIZERS = ["clamp", "ecfp", "sand"]
 COMMIT = "7b4f378351cb480db61018198a19356eb288a3f7"
 SOURCE = (
     "https://github.com/ersilia-os/ersilia-model-hub-maintained-inputs/blob/"
@@ -99,6 +107,20 @@ def published_catalog():
         raise
 
 
+def featurizer_entry(name):
+    """Describe a featurizer of the library in ``OUT`` for ``catalog.json``."""
+    fm = json.loads((OUT / f"{name}.json").read_text())
+    built_with = {"lazysim": fm["lazysim_version"], fm["engine"]: fm["engine_version"]}
+    if "weights_sha256" in fm:
+        built_with["weights_sha256"] = fm["weights_sha256"]
+    return {
+        "similarity": fm["similarity"],
+        "built_with": built_with,
+        "files": describe(OUT / fm["index_file"], OUT / f"{name}.json"),
+        "embeddings": describe(OUT / f"{name}_embeddings.npy"),
+    }
+
+
 def publish(built):
     """Move a built library into the S3 layout and record it in catalog.json."""
     manifest = json.loads((built / "manifest.json").read_text())
@@ -112,21 +134,7 @@ def publish(built):
     OUT.mkdir(parents=True, exist_ok=True)
     for path in built.iterdir():
         shutil.move(path, OUT / path.name)
-    featurizers = {}
-    for name in FEATURIZERS:
-        fm = json.loads((OUT / f"{name}.json").read_text())
-        built_with = {
-            "lazysim": fm["lazysim_version"],
-            fm["engine"]: fm["engine_version"],
-        }
-        if "weights_sha256" in fm:
-            built_with["weights_sha256"] = fm["weights_sha256"]
-        featurizers[name] = {
-            "similarity": fm["similarity"],
-            "built_with": built_with,
-            "files": describe(OUT / fm["index_file"], OUT / f"{name}.json"),
-            "embeddings": describe(OUT / f"{name}_embeddings.npy"),
-        }
+    featurizers = {name: featurizer_entry(name) for name in FEATURIZERS}
     catalog = published_catalog()
     catalog["libraries"][NAME] = {
         "title": TITLE,
@@ -144,6 +152,26 @@ def publish(built):
     print(f"Wrote {OUT} and {catalog_path}")
 
 
+def add(names):
+    """Index the published library with more featurizers and list them in the catalog."""
+    catalog = published_catalog()
+    published = remote.read_catalog()[NAME]
+    OUT.mkdir(parents=True, exist_ok=True)
+    for f in published["files"]:
+        path = OUT / Path(f["path"]).name
+        if not path.exists():
+            remote.download_files([(f["url"], path, f["sha256"], f["bytes"])], NAME)
+        assert sha256(path) == f["sha256"], f"{path} differs from the published file"
+    missing = [n for n in names if n not in artifacts.featurizers_in(OUT)]
+    if missing:
+        lazy_sim.index(None, OUT, featurizers=missing, embeddings=True)
+    for name in names:
+        catalog["libraries"][NAME]["featurizers"][name] = featurizer_entry(name)
+    catalog_path = LIBRARIES / "catalog.json"
+    catalog_path.write_text(json.dumps(catalog, indent=2))
+    print(f"Added {', '.join(names)} to {OUT}; wrote {catalog_path}")
+
+
 def main():
     library_csv = prepare_input()
     built = BUILD / "index"
@@ -152,4 +180,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:2] == ["--add"]:
+        add(sys.argv[2:])
+    else:
+        main()

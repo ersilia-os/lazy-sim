@@ -7,7 +7,7 @@ engine needs to build an index and embed queries.
 
 import importlib
 
-AVAILABLE = ("clamp", "ecfp")
+AVAILABLE = ("clamp", "ecfp", "sand")
 
 
 def get_featurizer(name):

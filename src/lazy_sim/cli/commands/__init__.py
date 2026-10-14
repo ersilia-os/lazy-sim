@@ -48,11 +48,13 @@ featurizers_option = click.option(
     multiple=True,
     required=True,
     type=click.Choice(AVAILABLE),
-    help="clamp (cosine) or ecfp (ECFP6, Tanimoto; needs lazy-sim[ecfp]). Repeatable.",
+    help="clamp (cosine), ecfp (ECFP6, Tanimoto; needs lazy-sim[ecfp]) or sand "
+    "(3D shape, cosine). Repeatable.",
 )
 
 embeddings_option = click.option(
     "--embeddings",
     is_flag=True,
-    help="Also keep the full embeddings (CLAMP: 3 KB, ECFP: 256 B per molecule).",
+    help="Also keep the full embeddings (per molecule: CLAMP 3 KB, ECFP 256 B, "
+    "SAND 2 KB).",
 )

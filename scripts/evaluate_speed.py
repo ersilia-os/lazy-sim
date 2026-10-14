@@ -1,13 +1,14 @@
 """Maintainer script: time ``lazysim search`` from launch to exit, stage by stage.
 
 Two searches run, each in a fresh process:
-- Indexed runs the real ``lazysim search`` command, which searches the featurizer's
-  index (turbovec for CLAMP, FPSim2 for ECFP). Timers around its search engine
-  record loading and searching; the remaining time goes to reading the queries,
-  writing the hits CSV, and starting and stopping the process.
+- Indexed runs the real ``lazysim search`` command, which searches the
+  featurizer's index (turbovec for CLAMP and SAND, FPSim2 for ECFP). Timers around
+  its search engine record loading and searching; the remaining time goes to
+  reading the queries, writing the hits CSV, and starting and stopping the process.
 - Embeddings (exact) does the same work, but compares each query with every stored
-  embedding (cosine for CLAMP, Tanimoto for ECFP). It runs only when the library
-  has the featurizer's embeddings (``lazysim fetch NAME -f FEATURIZER --embeddings``).
+  embedding (cosine for CLAMP and SAND, Tanimoto for ECFP). It runs only when the
+  library has the featurizer's embeddings (``lazysim fetch NAME -f FEATURIZER
+  --embeddings``).
 
 The total is measured from launching the process until it exits. Before each run,
 the model and library files are dropped from the system's file cache, so loading
@@ -37,10 +38,9 @@ from rich.table import Table
 from evaluate_recall import SIMILARITY, draw_queries, exact_search
 from lazy_sim.cli import cli
 from lazy_sim.engines import get_engine
-from lazy_sim.engines.turbovec import POOL_MIN_QUERIES
-from lazy_sim.featurizers import AVAILABLE, clamp, ecfp, get_featurizer
+from lazy_sim.featurizers import AVAILABLE, get_featurizer
 from lazy_sim.io import artifacts, home, tables
-from lazy_sim.utils.parallel import ChunkPool, set_threads
+from lazy_sim.utils.parallel import set_threads
 
 METHODS = {"indexed": "Indexed", "exact": "Embeddings (exact)"}
 STAGES = (
@@ -80,31 +80,26 @@ def run_indexed(featurizer, folder, queries_csv, hits_csv, k, threads, launched,
 
 
 def run_exact(featurizer, folder, queries_csv, hits_csv, k, threads, launched, out):
-    """Search the embeddings exactly, as ``lazysim search`` would; times to `out`.
-
-    Queries are fingerprinted as ``lazysim search`` does: in worker processes when
-    there are many of them.
-    """
+    """Search the embeddings exactly, as ``lazysim search`` would; times to `out`."""
     spent = {STAGES[0]: time.time() - float(launched)}
+    clock = time.perf_counter()
     folder, k, threads = Path(folder), int(k), int(threads) or os.cpu_count()
+    feat = get_featurizer(featurizer)
+    if hasattr(feat, "encode"):  # neural featurizers: fingerprint, then encode
+        weights, fingerprint = feat.load_weights(), feat.fingerprints
+    else:
+        weights, fingerprint = None, feat.packed_fingerprints
+    embeddings_npy = folder / artifacts.embeddings_file(featurizer)
+    embeddings = np.load(embeddings_npy, mmap_mode="r")  # read during the search
+    spent[STAGES[1]] = time.perf_counter() - clock
     with open(queries_csv, newline="") as fh:
         queries = [(row["id"], row["smiles"]) for row in csv.DictReader(fh)]
     clock = time.perf_counter()
-    if featurizer == "clamp":
-        weights, fingerprint = clamp.load_weights(), clamp.fingerprints
-    else:
-        weights, fingerprint = None, ecfp.packed_fingerprints
-    embeddings_npy = folder / artifacts.embeddings_file(featurizer)
-    embeddings = np.load(embeddings_npy, mmap_mode="r")  # read during the search
-    processes = threads if len(queries) >= POOL_MIN_QUERIES else 1
-    with ChunkPool(fingerprint, processes) as pool:
-        spent[STAGES[1]] = time.perf_counter() - clock
-        clock = time.perf_counter()
-        fps = pool.map([s for _, s in queries])
-        vectors = clamp.encode(weights, fps) if weights else np.array(fps)
-        similarity = SIMILARITY[featurizer]
-        scores, rows = exact_search(embeddings, vectors, k, threads, similarity)
-        spent[STAGES[2]] = time.perf_counter() - clock
+    fps = fingerprint([s for _, s in queries])
+    vectors = feat.encode(weights, fps) if weights else np.array(fps)
+    similarity = SIMILARITY[featurizer]
+    scores, rows = exact_search(embeddings, vectors, k, threads, similarity)
+    spent[STAGES[2]] = time.perf_counter() - clock
     hits = artifacts.lookup(artifacts.open_library_db(folder), np.unique(rows))
     with open(hits_csv, "w", newline="") as fh:
         writer = tables.hits_writer(fh)
@@ -167,8 +162,8 @@ def main():
         parser.error(f"{folder} has no {featurizer} index")
     manifest = artifacts.read_featurizer(folder, featurizer)
     files = [folder / manifest["index_file"], folder / artifacts.LIBRARY_DB]
-    if featurizer == "clamp":
-        files.append(clamp.ensure_weights())
+    if hasattr(get_featurizer(featurizer), "ensure_weights"):
+        files.append(get_featurizer(featurizer).ensure_weights())
     embeddings_npy = folder / artifacts.embeddings_file(featurizer)
     methods = ["indexed"]
     if embeddings_npy.exists() and featurizer in SIMILARITY:
