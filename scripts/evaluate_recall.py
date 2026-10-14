@@ -4,16 +4,17 @@ The library needs its CLAMP embeddings (``lazysim fetch NAME --embeddings``): th
 give the exact answer, the cosine of each query against every library molecule.
 
 1. Draw random library molecules as queries (seeded).
-2. Search them with ``lazy_sim.search``, as ``lazysim search`` does, for k + 1 hits.
+2. Search them with ``lazy_sim.search``, as ``lazysim search`` does, for k + 1 hits
+   (the largest k asked for).
 3. Compute the exact k + 1 nearest neighbours from the stored embeddings.
-4. Drop each query's own row from both lists and keep the first k. Recall@n is the
-   share of the true n nearest neighbours that lazy-sim also returned in its top n,
+4. Drop each query's own row from both lists. For each k asked for, recall@k is the
+   share of the true k nearest neighbours that lazy-sim also returned in its top k,
    averaged over the queries. The score error compares lazy-sim's similarity with
    the exact cosine of the same pair.
 
 Usage
 -----
-python scripts/evaluate_recall.py ersilia-reference -k 100
+python scripts/evaluate_recall.py ersilia-reference -k 1,10,100,1000
 """
 
 import argparse
@@ -28,6 +29,17 @@ import lazy_sim
 from lazy_sim.io import artifacts, home
 
 CHUNK = 20_000
+
+
+def neighbour_counts(value):
+    """Parse ``-k``: one count, or several separated by commas, such as 1,10,100."""
+    try:
+        counts = sorted({int(k) for k in value.split(",")})
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected integers such as 1,10,100: {value}")
+    if counts[0] < 1:
+        raise argparse.ArgumentTypeError("k must be at least 1")
+    return counts
 
 
 def draw_queries(con, n, seed):
@@ -81,12 +93,17 @@ def without(rows, row, k):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("library", help="Library name or folder.")
-    parser.add_argument("-k", type=int, default=100, help="Neighbours evaluated.")
+    parser.add_argument(
+        "-k",
+        type=neighbour_counts,
+        default=[100],
+        help="Neighbours evaluated; several separated by commas, such as 1,10,100.",
+    )
     parser.add_argument("-n", "--queries", type=int, default=1_000)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("-t", "--threads", type=int)
     args = parser.parse_args()
-    k = args.k
+    k = args.k[-1]
 
     folder = home.resolve(args.library, must_exist=True)
     embeddings = np.load(folder / artifacts.embeddings_file("clamp"), mmap_mode="r")
@@ -117,21 +134,22 @@ def main():
     q_vectors = np.asarray(embeddings[rows])
     true_rows, _ = exact_top(embeddings, q_vectors, k + 1)
 
-    cutoffs = sorted({n for n in (1, 10, k) if n <= k})
-    recall = {n: [] for n in cutoffs}
+    recall = {n: [] for n in args.k}
     errors = []
     for i, row in enumerate(rows):
         query_id = molecules[int(row)][0]
         got_rows, got_scores = found[query_id]
         got = without(got_rows, row, k)
         true = without(true_rows[i].tolist(), row, k)
-        for n in cutoffs:
+        for n in args.k:
             recall[n].append(len(set(got[:n]) & set(true[:n])) / n)
         exact = embeddings[np.array(got_rows)] @ q_vectors[i]
         errors.extend(np.abs(np.array(got_scores) - np.minimum(exact, 1.0)))
 
-    print(f"{folder.name}: {len(rows):,} queries, k = {k}, search {search_s:.1f} s")
-    for n in cutoffs:
+    print(
+        f"{folder.name}: {len(rows):,} queries, {k + 1} hits each in {search_s:.1f} s"
+    )
+    for n in args.k:
         print(f"recall@{n} = {np.mean(recall[n]):.4f}")
     print(f"score error: mean {np.mean(errors):.4f}, max {np.max(errors):.4f}")
 
