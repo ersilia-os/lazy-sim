@@ -25,7 +25,7 @@ def fetch_cmd():
         run_or_fail(
             run_fetch,
             name,
-            artifacts_dir,
             featurizers=featurizers,
+            artifacts_dir=artifacts_dir,
             embeddings=embeddings,
         )

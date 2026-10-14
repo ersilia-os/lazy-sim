@@ -8,7 +8,6 @@ engine needs to build an index and embed queries.
 import importlib
 
 AVAILABLE = ("clamp", "ecfp")
-DEFAULT = "clamp"
 
 
 def get_featurizer(name):

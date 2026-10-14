@@ -48,7 +48,7 @@ def _remote_table():
     }
     shared = ", ".join(f"{n} {_gb(e['files'])}" for n, e in sorted(catalog.items()))
     table = Table(
-        title="Libraries to fetch with 'lazysim fetch NAME [-f FEATURIZER]'",
+        title="Libraries to fetch with 'lazysim fetch NAME -f FEATURIZER'",
         caption=f"Each library also downloads its ids and SMILES once ({shared}).",
     )
     table.add_column("Name", no_wrap=True)

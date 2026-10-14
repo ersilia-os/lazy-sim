@@ -92,7 +92,12 @@ def test_index(library):
 
 def test_search_and_info(library, tmp_path):
     hits_csv = tmp_path / "hits.csv"
-    _run("search", "-i", DATA / "queries.csv", "-a", library, "-o", hits_csv, "-k", K)
+    args = ["search", "-i", DATA / "queries.csv", "-a", library, "-o", hits_csv]
+    no_featurizer = CliRunner().invoke(cli, [str(a) for a in args])
+    assert (
+        no_featurizer.exit_code != 0 and "Missing option '-f'" in no_featurizer.output
+    )
+    _run(*args, "-k", K, "-f", "clamp")
     hits = _read(hits_csv)
     assert tuple(hits[0]) == HITS_COLUMNS
     assert len(hits) == K * len(_members())
@@ -113,7 +118,9 @@ def test_search_without_ids(library, tmp_path):
         writer.writerow(["C1CC"])  # invalid: skipped, reported as row-6
     hits_csv = tmp_path / "hits.csv"
     result = CliRunner().invoke(
-        cli, ["search", "-i", str(smiles_only), "-a", str(library), "-o", str(hits_csv)]
+        cli,
+        ["search", "-i", str(smiles_only), "-a", str(library), "-o", str(hits_csv)]
+        + ["-f", "clamp"],
     )
     assert result.exit_code == 0, result.output
     assert "row-6" in result.output
@@ -158,7 +165,7 @@ def test_search_ecfp(library, tmp_path):
 @needs_fpsim2
 def test_add_featurizer(home, tmp_path):
     lib = tmp_path / "lib"
-    _run("index", "-i", DATA / "library.csv", "-a", lib, "-t", 2)
+    _run("index", "-i", DATA / "library.csv", "-a", lib, "-t", 2, "-f", "clamp")
     _run("index", "-a", lib, "-f", "ecfp")
     assert (lib / "clamp.json").exists() and (lib / "ecfp.json").exists()
     again = CliRunner().invoke(cli, ["index", "-a", str(lib), "-f", "ecfp"])
@@ -206,21 +213,25 @@ def test_fetch_and_catalog(library, home, tmp_path, monkeypatch):
 
     assert "tiny" in _run("catalog", "--remote")
     assert "No libraries" in _run("catalog")
-    _run("fetch", "tiny")
+    _run("fetch", "tiny", "-f", "clamp")
     fetched = home / "libraries" / "tiny"
     assert not (fetched / "clamp_embeddings.npy").exists()
-    _run("fetch", "tiny", "--embeddings")  # adds them to the library already here
+    _run(
+        "fetch", "tiny", "-f", "clamp", "--embeddings"
+    )  # adds them to the library already here
     assert (fetched / "clamp_embeddings.npy").exists()
     assert not (fetched / "ecfp.json").exists()
     if HAS_FPSIM2:
         _run("fetch", "tiny", "-f", "ecfp")
         assert (fetched / "ecfp.json").exists()
         assert "ecfp" in _run("catalog")
-    assert "already fetched" in _run("fetch", "tiny")
+    assert "already fetched" in _run("fetch", "tiny", "-f", "clamp")
 
     queries = DATA / "queries.csv"
-    _run("search", "-i", queries, "-a", "tiny", "-o", tmp_path / "a.csv")
-    _run("search", "-i", queries, "-a", library, "-o", tmp_path / "b.csv")
+    _run("search", "-i", queries, "-a", "tiny", "-o", tmp_path / "a.csv", "-f", "clamp")
+    _run(
+        "search", "-i", queries, "-a", library, "-o", tmp_path / "b.csv", "-f", "clamp"
+    )
     assert _read(tmp_path / "a.csv") == _read(tmp_path / "b.csv")
     _run("info", "-a", "tiny")
 

@@ -1,7 +1,7 @@
 import click
 
 from ... import __version__
-from ...featurizers import AVAILABLE, DEFAULT
+from ...featurizers import AVAILABLE
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
@@ -46,8 +46,7 @@ featurizers_option = click.option(
     "--featurizer",
     "featurizers",
     multiple=True,
-    default=[DEFAULT],
-    show_default=True,
+    required=True,
     type=click.Choice(AVAILABLE),
     help="clamp (cosine) or ecfp (ECFP6, Tanimoto; needs lazy-sim[ecfp]). Repeatable.",
 )

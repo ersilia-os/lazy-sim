@@ -11,7 +11,7 @@ from rich.progress import MofNCompleteColumn, Progress
 
 from . import __version__
 from .engines import get_engine
-from .featurizers import DEFAULT, get_featurizer
+from .featurizers import get_featurizer
 from .io import artifacts, home, remote, tables
 from .utils.chem import inchikey, validate
 from .utils.logging import console, logger
@@ -86,9 +86,7 @@ def _build_library(input_csv, out, threads):
         )
 
 
-def index(
-    input_csv, artifacts_dir, featurizers=DEFAULT, embeddings=False, threads=None
-):
+def index(input_csv, artifacts_dir, featurizers, embeddings=False, threads=None):
     """Build a searchable library, or add featurizers to an existing one.
 
     Parameters
@@ -99,7 +97,7 @@ def index(
     artifacts_dir : str or Path
         Library name (a folder in ``~/lazysim/libraries``) or folder path.
     featurizers : str or list of str
-        Featurizers to index with: ``"clamp"`` (default) and/or ``"ecfp"``.
+        Featurizers to index with: ``"clamp"`` and/or ``"ecfp"``.
     embeddings : bool
         Also keep each featurizer's full embeddings, rows aligned with the library.
     threads : int, optional
@@ -145,18 +143,18 @@ def index(
     return folder
 
 
-def fetch(name, artifacts_dir=None, featurizers=DEFAULT, embeddings=False):
+def fetch(name, featurizers, artifacts_dir=None, embeddings=False):
     """Download a library that Ersilia has already indexed.
 
     Parameters
     ----------
     name : str
         Library name, as listed by ``lazysim catalog --remote``.
+    featurizers : str or list of str
+        Featurizers to download: ``"clamp"`` and/or ``"ecfp"``.
     artifacts_dir : str or Path, optional
         Destination name or path; ``~/lazysim/libraries/<name>`` by default.
         Fetching into a copy of the same library adds the missing featurizers.
-    featurizers : str or list of str
-        Featurizers to download: ``"clamp"`` (default) and/or ``"ecfp"``.
     embeddings : bool
         Also download each featurizer's full embeddings.
 
@@ -233,22 +231,15 @@ def fetch(name, artifacts_dir=None, featurizers=DEFAULT, embeddings=False):
     return folder
 
 
-def _pick(folder, featurizer):
+def _check_index(folder, featurizer):
     available = artifacts.featurizers_in(folder)
     if not available:
         raise ValueError(f"{folder} has no finished index")
-    if featurizer is None:
-        if DEFAULT in available:
-            return DEFAULT
-        if len(available) == 1:
-            return available[0]
-        raise ValueError(f"Choose a featurizer: {', '.join(available)}")
     if featurizer not in available:
         raise ValueError(
-            f"{folder} has no {featurizer} index; add it with 'lazysim fetch' "
-            f"or 'lazysim index -a {folder} -f {featurizer}'"
+            f"{folder} has no {featurizer} index (it has {', '.join(available)}); "
+            f"add it with 'lazysim fetch' or 'lazysim index -a {folder} -f {featurizer}'"
         )
-    return featurizer
 
 
 def _check_versions(manifest):
@@ -272,7 +263,7 @@ def _check_versions(manifest):
         )
 
 
-def search(input_csv, artifacts_dir, output_csv, k=100, featurizer=None, threads=None):
+def search(input_csv, artifacts_dir, output_csv, featurizer, k=100, threads=None):
     """Find the `k` most similar library molecules for each query.
 
     Parameters
@@ -285,11 +276,11 @@ def search(input_csv, artifacts_dir, output_csv, k=100, featurizer=None, threads
     output_csv : str or Path
         Output with one row per hit: ``query_id, query_smiles, rank, hit_id,
         hit_smiles, similarity``.
+    featurizer : str
+        Index to search: ``"clamp"`` (cosine of CLAMP embeddings) or ``"ecfp"``
+        (exact Tanimoto of ECFP fingerprints).
     k : int
         Hits per query.
-    featurizer : str, optional
-        Index to search; ``"clamp"`` when the library has it. Similarity is the
-        cosine of CLAMP embeddings, or the exact Tanimoto of ECFP fingerprints.
     threads : int, optional
         Worker processes and threads; all logical CPUs by default.
 
@@ -302,9 +293,9 @@ def search(input_csv, artifacts_dir, output_csv, k=100, featurizer=None, threads
         raise ValueError("k must be at least 1")
     set_threads(threads)
     folder = home.resolve(artifacts_dir, must_exist=True)
-    name = _pick(folder, featurizer)
-    feat = get_featurizer(name)
-    manifest = artifacts.read_featurizer(folder, name)
+    feat = get_featurizer(featurizer)
+    _check_index(folder, featurizer)
+    manifest = artifacts.read_featurizer(folder, featurizer)
     _check_versions(manifest)
     tables.check_columns(input_csv, require_id=False)
     start = time.perf_counter()
@@ -358,7 +349,7 @@ def search(input_csv, artifacts_dir, output_csv, k=100, featurizer=None, threads
         "Searched %d queries against %d molecules (%s, %s) in %.1f s → %s",
         searched,
         n_library,
-        name,
+        featurizer,
         feat.SIMILARITY,
         time.perf_counter() - start,
         output_csv,

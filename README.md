@@ -12,9 +12,9 @@ pip install "lazy-sim[ecfp] @ git+https://github.com/ersilia-os/lazy-sim.git"   
 | Command | Description |
 |---|---|
 | `lazysim catalog --remote` | List the libraries Ersilia has indexed |
-| `lazysim fetch ersilia-reference` | Download one, ready to search |
-| `lazysim index -i library.csv -a mylib` | Index your own library |
-| `lazysim search -i queries.csv -a mylib -o hits.csv` | Top 100 hits per query (`-k` to change) |
+| `lazysim fetch ersilia-reference -f clamp` | Download one, ready to search |
+| `lazysim index -i library.csv -a mylib -f clamp` | Index your own library |
+| `lazysim search -i queries.csv -a mylib -o hits.csv -f clamp` | Top 100 hits per query (`-k` to change) |
 | `lazysim catalog` | List your local libraries |
 | `lazysim info -a mylib` | Describe a library |
 
@@ -25,11 +25,11 @@ pip install "lazy-sim[ecfp] @ git+https://github.com/ersilia-os/lazy-sim.git"   
 
 ## Featurizers
 
-Choose with `-f`. A library can hold both; `-f ecfp` on `fetch` or `index -a` adds it to one you have.
+`fetch`, `index` and `search` need `-f`; there is no default. A library can hold both; `-f ecfp` on `fetch` or `index -a` adds it to one you have.
 
 | `-f` | Similarity | Engine |
 |---|---|---|
-| `clamp` (default) | Cosine of [CLAMP](https://github.com/ml-jku/clamp) embeddings, approximate | [turbovec](https://pypi.org/project/turbovec/), 4-bit |
+| `clamp` | Cosine of [CLAMP](https://github.com/ml-jku/clamp) embeddings, approximate | [turbovec](https://pypi.org/project/turbovec/), 4-bit |
 | `ecfp` | Tanimoto of ECFP6 (2048 bits), exact | [FPSim2](https://github.com/chembl/FPSim2), needs `[ecfp]` |
 
 CLAMP scores are compressed: random pairs score about 0.5 and close analogues above 0.9.

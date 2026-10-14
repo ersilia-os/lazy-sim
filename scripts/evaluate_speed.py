@@ -38,7 +38,7 @@ from evaluate_recall import SIMILARITY, draw_queries, exact_search
 from lazy_sim.cli import cli
 from lazy_sim.engines import get_engine
 from lazy_sim.engines.turbovec import POOL_MIN_QUERIES
-from lazy_sim.featurizers import AVAILABLE, DEFAULT, clamp, ecfp, get_featurizer
+from lazy_sim.featurizers import AVAILABLE, clamp, ecfp, get_featurizer
 from lazy_sim.io import artifacts, home, tables
 from lazy_sim.utils.parallel import ChunkPool, set_threads
 
@@ -153,7 +153,7 @@ def time_run(method, args, folder, queries_csv, tmp):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("library", help="Library name or folder.")
-    parser.add_argument("-f", "--featurizer", choices=AVAILABLE, default=DEFAULT)
+    parser.add_argument("-f", "--featurizer", choices=AVAILABLE, required=True)
     parser.add_argument("-n", "--queries", type=int, default=1_000)
     parser.add_argument("-k", type=int, default=100, help="Hits per query.")
     parser.add_argument("-r", "--repeats", type=int, default=3)

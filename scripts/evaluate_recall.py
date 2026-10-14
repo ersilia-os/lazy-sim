@@ -33,7 +33,7 @@ from rich.console import Console
 from rich.table import Table
 
 import lazy_sim
-from lazy_sim.featurizers import AVAILABLE, DEFAULT
+from lazy_sim.featurizers import AVAILABLE
 from lazy_sim.io import artifacts, home
 
 CHUNK = 20_000
@@ -138,7 +138,7 @@ def rows_of(con, ids):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("library", help="Library name or folder.")
-    parser.add_argument("-f", "--featurizer", choices=AVAILABLE, default=DEFAULT)
+    parser.add_argument("-f", "--featurizer", choices=AVAILABLE, required=True)
     parser.add_argument(
         "-k",
         type=neighbour_counts,
