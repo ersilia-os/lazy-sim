@@ -50,11 +50,6 @@ def files_size(paths):
     return f"{total / 1e9:.2f} GB" if total >= 1e9 else f"{total / 1e6:.1f} MB"
 
 
-def featurizer_files(path, featurizer):
-    """Return the files in `path` that belong to `featurizer`."""
-    return [f for f in Path(path).iterdir() if f.stem.split("_")[0] == featurizer]
-
-
 def prepare_dir(path):
     """Create the artifacts folder, refusing one that already has files in it."""
     path = Path(path)

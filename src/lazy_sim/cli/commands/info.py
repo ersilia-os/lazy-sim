@@ -11,6 +11,13 @@ def source(manifest):
     return f"{src['name']} {src['version']}" if src else "indexed locally"
 
 
+def sizes(folder, featurizer, manifest):
+    """Return the index size and the embeddings size (or "No") of a featurizer."""
+    emb = folder / artifacts.embeddings_file(featurizer)
+    index = artifacts.files_size([folder / manifest["index_file"]])
+    return index, artifacts.files_size([emb]) if emb.exists() else "No"
+
+
 def _engine(fm):
     if fm["engine"] == "turbovec":
         return f"turbovec {fm['engine_version']}, {fm['bits']}-bit"
@@ -31,6 +38,7 @@ def info_cmd():
             ("Molecules", f"{lib['indexed']:,}"),
             ("Rows skipped", f"{lib['skipped']:,}"),
             ("Source", source(m)),
+            ("Ids and SMILES", artifacts.files_size([folder / artifacts.LIBRARY_DB])),
             ("Library file", lib["file"]),
             ("Library sha256", lib["sha256"]),
             ("Built with", f"lazy-sim {m['lazysim_version']}"),
@@ -39,16 +47,11 @@ def info_cmd():
             table.add_row(key, value)
         console.print(table)
         indexes = Table(title="Indexes")
-        for column in ("Featurizer", "Similarity", "Engine", "Embeddings", "Size"):
+        for column in ("Featurizer", "Similarity", "Engine", "Index", "Embeddings"):
             indexes.add_column(column)
         for name in artifacts.featurizers_in(folder):
             fm = artifacts.read_featurizer(folder, name)
-            emb = (folder / artifacts.embeddings_file(name)).exists()
             indexes.add_row(
-                name,
-                fm["similarity"],
-                _engine(fm),
-                "Yes" if emb else "No",
-                artifacts.files_size(artifacts.featurizer_files(folder, name)),
+                name, fm["similarity"], _engine(fm), *sizes(folder, name, fm)
             )
         console.print(indexes)

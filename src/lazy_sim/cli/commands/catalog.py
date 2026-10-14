@@ -4,7 +4,7 @@ from rich.table import Table
 
 from ...io import artifacts, home, remote
 from . import lazysim_cli, run_or_fail
-from .info import source
+from .info import sizes, source
 
 
 def _gb(files):
@@ -16,26 +16,25 @@ def _local_table():
     if not libraries:
         return None
     table = Table(title=f"Libraries in {home.libraries_dir()}")
-    for column in ("Name", "Featurizer", "Similarity", "Molecules", "Embeddings"):
+    for column in ("Name", "Featurizer", "Similarity", "Molecules", "Index"):
         table.add_column(column, no_wrap=True)
-    table.add_column("Size", no_wrap=True)
+    table.add_column("Embeddings", no_wrap=True)
     table.add_column("Source")
     table.add_column("Created", no_wrap=True)
     for name, path, m in libraries:
-        for featurizer in artifacts.featurizers_in(path) or ["—"]:
-            fm = (
-                artifacts.read_featurizer(path, featurizer) if featurizer != "—" else {}
-            )
-            emb = (path / artifacts.embeddings_file(featurizer)).exists()
+        if not artifacts.featurizers_in(path):  # indexing never finished
+            unfinished = ("—", "—", f"{m['library']['indexed']:,}", "—", "—")
+            table.add_row(name, *unfinished, source(m), m["created"][:10])
+        for featurizer in artifacts.featurizers_in(path):
+            fm = artifacts.read_featurizer(path, featurizer)
             table.add_row(
                 name,
                 featurizer,
-                fm.get("similarity", "—"),
+                fm["similarity"],
                 f"{m['library']['indexed']:,}",
-                "Yes" if emb else "No",
-                artifacts.files_size(artifacts.featurizer_files(path, featurizer)),
+                *sizes(path, featurizer, fm),
                 source(m),
-                fm.get("created", m["created"])[:10],
+                fm["created"][:10],
             )
     return table
 
