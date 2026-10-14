@@ -1,18 +1,18 @@
-"""Maintainer script: measure how many true nearest neighbours lazy-sim search returns.
+"""Maintainer script: how many true nearest neighbours the indexed search returns.
 
 The library needs the featurizer's embeddings (``lazysim fetch NAME -f FEATURIZER
---embeddings``): they give the exact answer, the similarity of each query to every
-library molecule (cosine for CLAMP, Tanimoto for ECFP).
+--embeddings``). Comparing each query with every embedding gives the exact answer
+(cosine for CLAMP, Tanimoto for ECFP).
 
 1. Draw random library molecules as queries (seeded).
-2. Search them with ``lazy_sim.search``, as ``lazysim search`` does, for k + 1 hits
-   (k being the largest asked for).
-3. Compute the exact k + 1 nearest neighbours from the stored embeddings.
-4. Drop each query's own row from both lists. Recall@k is the share of lazy-sim's
+2. Search the index with ``lazy_sim.search``, as ``lazysim search`` does, for k + 1
+   hits (k being the largest asked for).
+3. Search the embeddings exactly, for k + 1 hits too.
+4. Drop each query's own row from both lists. Recall@k is the share of the indexed
    top k that are true top-k neighbours, averaged over the queries. A hit counts
    when its exact similarity is at least that of the true k-th neighbour, so
    molecules tied at the cut-off are interchangeable (common with Tanimoto). The
-   score error compares lazy-sim's similarity with the exact one for the same pair.
+   score error compares the indexed similarity with the exact one for the same pair.
 
 ``evaluate_speed.py`` measures how long both searches take.
 
@@ -118,7 +118,7 @@ def exact_search(embeddings, queries, k, threads, similarity):
     )
 
 
-def lazysim_top(hits_csv, row_of_id):
+def indexed_hits(hits_csv, row_of_id):
     """Read the hits CSV into ``{query_id: (rows, similarities)}``, best first."""
     found = {}
     with open(hits_csv, newline="") as fh:
@@ -181,7 +181,7 @@ def main():
         )
         with open(hits_csv, newline="") as fh:
             hit_ids = {hit["hit_id"] for hit in csv.DictReader(fh)}
-        found = lazysim_top(hits_csv, rows_of(con, hit_ids))
+        found = indexed_hits(hits_csv, rows_of(con, hit_ids))
     con.close()
 
     q_vectors = np.asarray(embeddings[rows])
@@ -197,7 +197,7 @@ def main():
         got_rows = np.array(got_rows)
         exact = similarity(q_vectors[i : i + 1], embeddings[got_rows])[0]
         errors.extend(np.abs(np.array(got_scores) - np.minimum(exact, 1.0)))
-        got = exact[got_rows != row][:k]  # exact similarity of lazy-sim's hits
+        got = exact[got_rows != row][:k]  # exact similarity of the indexed hits
         true = true_scores[i][true_rows[i] != row][:k]
         for n in args.k:
             recall[n].append(np.sum(got[:n] >= true[n - 1] - TIE) / n)
