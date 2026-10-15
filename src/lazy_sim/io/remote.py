@@ -1,9 +1,11 @@
 """Downloads from Ersilia's public storage, and the catalog of fetchable libraries."""
 
 import hashlib
+import http.client
 import json
 import os
 import tempfile
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -17,6 +19,7 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 
+from .. import __version__
 from ..utils.logging import console
 
 CATALOG_URL = (
@@ -24,6 +27,7 @@ CATALOG_URL = (
     "lazy-sim/data/libraries/catalog.json"
 )
 _BLOCK = 1 << 20
+_ATTEMPTS = 5
 
 
 def sha256(path):
@@ -61,20 +65,51 @@ def read_catalog():
     return libraries
 
 
-def download(url, dest, expected_sha256, progress=None, task=None):
-    """Stream `url` into `dest`, moving it into place only if its sha256 matches."""
+def _stream(url, start, sink):
+    """Write `url` from byte `start` on into ``sink(block)``; return the bytes read."""
+    headers = {"User-Agent": f"lazy-sim/{__version__}"}
+    if start:
+        headers["Range"] = f"bytes={start}-"
+    read = 0
+    request = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(request, timeout=60) as response:
+        if start and response.status != 206:
+            raise ValueError(f"{url} cannot resume a download")
+        for block in iter(lambda: response.read(_BLOCK), b""):
+            sink(block)
+            read += len(block)
+    return read
+
+
+def download(url, dest, expected_sha256, size, progress=None, task=None):
+    """Stream `url` into `dest`, moving it into place only if its sha256 matches.
+
+    A connection that drops or stalls is resumed where it stopped, a few times.
+    """
     dest = Path(dest)
     h = hashlib.sha256()
+    done = 0
     with tempfile.NamedTemporaryFile(
         dir=dest.parent, prefix=".part-", delete=False
     ) as tmp:
+
+        def sink(block):
+            tmp.write(block)
+            h.update(block)
+            if progress is not None:
+                progress.advance(task, len(block))
+
         try:
-            with urllib.request.urlopen(url, timeout=60) as response:
-                for block in iter(lambda: response.read(_BLOCK), b""):
-                    tmp.write(block)
-                    h.update(block)
-                    if progress is not None:
-                        progress.advance(task, len(block))
+            for attempt in range(_ATTEMPTS):
+                try:
+                    done += _stream(url, done, sink)
+                except urllib.error.HTTPError:
+                    raise
+                except (OSError, http.client.HTTPException):
+                    if attempt == _ATTEMPTS - 1:
+                        raise
+                if done >= size:
+                    break
         except BaseException:
             os.unlink(tmp.name)
             raise
@@ -95,5 +130,5 @@ def download_files(files, description):
     )
     with Progress(*columns, console=console) as progress:
         task = progress.add_task(description, total=sum(f[3] for f in files))
-        for url, dest, expected_sha256, _ in files:
-            download(url, dest, expected_sha256, progress, task)
+        for url, dest, expected_sha256, size in files:
+            download(url, dest, expected_sha256, size, progress, task)
