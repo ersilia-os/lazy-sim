@@ -40,7 +40,7 @@ How each featurizer is computed, where its weights come from, how it was checked
 
 ## Performance
 
-On a 16-thread laptop, 1,000 queries against the Ersilia Reference Library (1.36M compounds) take about 7 s with CLAMP and 10 s with ECFP, from launch to results. CLAMP returns 95% of the exact top 100. Details and how to reproduce them are in [docs/featurizers.md](docs/featurizers.md).
+On a 16-thread laptop, 1,000 queries against the Ersilia Reference Library (1.36M compounds) take about 7 s with CLAMP, 10 s with ECFP and 25 s with SAND, from launch to results. CLAMP and SAND return 95–97% of the exact top 100; ECFP is exact. Details and how to reproduce them are in [docs/featurizers.md](docs/featurizers.md).
 
 ## About the Ersilia Open Source Initiative
 

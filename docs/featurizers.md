@@ -97,8 +97,8 @@ The code is in [`src/lazy_sim/featurizers/clamp.py`](../src/lazy_sim/featurizers
 | Embeddings (float32) | 4.16 GB (3 KB per molecule) |
 | Recall@10 / @100 / @1000 | 0.955 / 0.952 / 0.953 |
 | Score error (mean) | 0.0018 |
-| Time indexed | 7.2 s |
-| Time embeddings | 16.2 s |
+| Time indexed | 7.5 s |
+| Time embeddings | 15.2 s |
 
 - **ChEMBL 37:** on 2.9M compounds, with 1,000 queries held out of the library, recall@100 was 0.958.
 - **Scores are compressed:** random pairs score about 0.5 and close analogues above 0.9. CLAMP was trained on bioactivity data, so its cosine is not a Tanimoto coefficient.
@@ -133,8 +133,8 @@ The code is in [`src/lazy_sim/featurizers/clamp.py`](../src/lazy_sim/featurizers
 | Embeddings (packed bits) | 347 MB (256 B per molecule) |
 | Recall@10 / @100 / @1000 | 1.000 / 1.000 / 1.000 |
 | Score error (mean) | 0.0000 |
-| Time indexed | 10.0 s |
-| Time embeddings | 28.4 s |
+| Time indexed | 10.1 s |
+| Time embeddings | 26.6 s |
 
 ## SAND
 
@@ -210,4 +210,17 @@ SAND does about 50× more work per molecule than CLAMP. On a 16-thread laptop:
   - Otherwise they spin for about 0.1 s and slow the single-core numpy steps in between.
   - It makes SAND about 20% faster (48 → 59 molecules per second) and CLAMP indexing about 6% faster, and doesn't change CLAMP search.
 - **Queries:** embedding 1,000 queries takes about 17–20 s.
-- **Indexing:** the Ersilia Reference Library takes about 6–7 hours. That is paid once, by Ersilia, for the libraries `fetch` serves.
+- **Indexing:** the Ersilia Reference Library took 6 h 21 min (about 59 molecules per second, 3.4 GB of memory at peak). That is paid once, by Ersilia, for the libraries `fetch` serves.
+
+### Search quality and speed
+
+| | Ersilia Reference Library |
+|---|---|
+| Index (turbovec, 4-bit) | 353 MB (260 B per molecule) |
+| Embeddings (float32) | 2.78 GB (2 KB per molecule) |
+| Recall@10 / @100 / @1000 | 0.967 / 0.966 / 0.959 |
+| Score error (mean) | 0.0033 |
+| Time indexed | 24.7 s |
+| Time embeddings | 30.0 s |
+
+- **Where the time goes:** embedding the 1,000 queries takes about 20 s, so SAND's indexed search is only a little faster than going through every embedding. The search itself takes a few seconds.
