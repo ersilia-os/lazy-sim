@@ -7,9 +7,11 @@ Two searches run, each in a fresh process:
   goes to reading the queries, writing the hits CSV, and starting and stopping the
   process.
 - Embeddings (exact) does the same work, but compares each query with every stored
-  embedding (cosine for the neural featurizers, Tanimoto for ECFP). It runs only
-  when the library has the featurizer's embeddings (``lazysim fetch NAME -f
-  FEATURIZER --embeddings``).
+  embedding (cosine for the neural featurizers, Tanimoto for ECFP). Like ``lazysim
+  search``, it computes query fingerprints in worker processes from the
+  featurizer's ``POOL_MIN_QUERIES`` on (100 for Monroe, 5,000 for the others). It
+  runs only when the library has the featurizer's embeddings (``lazysim fetch NAME
+  -f FEATURIZER --embeddings``).
 
 The total is measured from launching the process until it exits. Before each run,
 the model and library files are dropped from the system's file cache, so loading
@@ -39,9 +41,10 @@ from rich.table import Table
 from evaluate_recall import SIMILARITY, draw_queries, exact_search
 from lazy_sim.cli import cli
 from lazy_sim.engines import get_engine
+from lazy_sim.engines.turbovec import POOL_MIN_QUERIES
 from lazy_sim.featurizers import AVAILABLE, get_featurizer
 from lazy_sim.io import artifacts, home, tables
-from lazy_sim.utils.parallel import set_threads
+from lazy_sim.utils.parallel import ChunkPool, set_threads
 
 METHODS = {"indexed": "Indexed", "exact": "Embeddings (exact)"}
 STAGES = (
@@ -83,6 +86,8 @@ def run_indexed(featurizer, folder, queries_csv, hits_csv, k, threads, launched,
 def run_exact(featurizer, folder, queries_csv, hits_csv, k, threads, launched, out):
     """Search the embeddings exactly, as ``lazysim search`` would; times to `out`."""
     spent = {STAGES[0]: time.time() - float(launched)}
+    with open(queries_csv, newline="") as fh:
+        queries = [(row["id"], row["smiles"]) for row in csv.DictReader(fh)]
     clock = time.perf_counter()
     folder, k, threads = Path(folder), int(k), int(threads) or os.cpu_count()
     feat = get_featurizer(featurizer)
@@ -90,17 +95,17 @@ def run_exact(featurizer, folder, queries_csv, hits_csv, k, threads, launched, o
         weights, fingerprint = feat.load_weights(), feat.fingerprints
     else:
         weights, fingerprint = None, feat.packed_fingerprints
-    embeddings_npy = folder / artifacts.embeddings_file(featurizer)
-    embeddings = np.load(embeddings_npy, mmap_mode="r")  # read during the search
-    spent[STAGES[1]] = time.perf_counter() - clock
-    with open(queries_csv, newline="") as fh:
-        queries = [(row["id"], row["smiles"]) for row in csv.DictReader(fh)]
-    clock = time.perf_counter()
-    fps = fingerprint([s for _, s in queries])
-    vectors = feat.encode(weights, fps) if weights else np.array(fps)
-    similarity = SIMILARITY[featurizer]
-    scores, rows = exact_search(embeddings, vectors, k, threads, similarity)
-    spent[STAGES[2]] = time.perf_counter() - clock
+    enough = getattr(feat, "POOL_MIN_QUERIES", POOL_MIN_QUERIES)
+    with ChunkPool(fingerprint, threads if len(queries) >= enough else 1) as pool:
+        embeddings_npy = folder / artifacts.embeddings_file(featurizer)
+        embeddings = np.load(embeddings_npy, mmap_mode="r")  # read during the search
+        spent[STAGES[1]] = time.perf_counter() - clock
+        clock = time.perf_counter()
+        fps = pool.map([s for _, s in queries])
+        vectors = feat.encode(weights, fps) if weights else np.array(fps)
+        similarity = SIMILARITY[featurizer]
+        scores, rows = exact_search(embeddings, vectors, k, threads, similarity)
+        spent[STAGES[2]] = time.perf_counter() - clock
     hits = artifacts.lookup(artifacts.open_library_db(folder), np.unique(rows))
     with open(hits_csv, "w", newline="") as fh:
         writer = tables.hits_writer(fh)

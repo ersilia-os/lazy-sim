@@ -39,8 +39,7 @@ def _local_table():
     return table
 
 
-def _remote_table():
-    catalog = run_or_fail(remote.read_catalog)
+def _remote_table(catalog):
     local = {
         (name, f)
         for name, path, _ in home.list_local()
@@ -71,6 +70,18 @@ def _remote_table():
     return table
 
 
+def _licence_notes(catalog):
+    """One line per published featurizer whose licence restricts its use."""
+    return sorted(
+        {
+            f"{featurizer}: {published['license']}"
+            for entry in catalog.values()
+            for featurizer, published in entry["featurizers"].items()
+            if "license" in published
+        }
+    )
+
+
 def catalog_cmd():
     @lazysim_cli.command(short_help="List local libraries, or ones to fetch.")
     @click.option(
@@ -85,7 +96,13 @@ def catalog_cmd():
         There is one row per library and featurizer.
         """
         console = Console()
-        table = _remote_table() if show_remote else _local_table()
+        if show_remote:
+            libraries = run_or_fail(remote.read_catalog)
+            console.print(_remote_table(libraries))
+            for note in _licence_notes(libraries):
+                console.print(note, markup=False, highlight=False)
+            return
+        table = _local_table()
         if table is None:
             console.print(
                 f"No libraries in {home.libraries_dir()} yet. "

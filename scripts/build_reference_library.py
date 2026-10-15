@@ -2,7 +2,8 @@
 
 1. Download the Ersilia Reference Library (pinned commit) and check its sha256.
 2. Use each molecule's InChIKey as its id; SMILES are kept exactly as given.
-3. Index it with lazy-sim (CLAMP, ECFP and SAND), keeping the full embeddings.
+3. Index it with lazy-sim (CLAMP, ECFP, SAND, Mol-JEPA and Monroe), keeping the
+   full embeddings.
 4. Lay the files out as on S3 under ``data/libraries/``, and write ``catalog.json``
    as the published one plus this library (so nobody else's entries are lost).
 
@@ -16,17 +17,22 @@ Usage
 -----
 LAZYSIM_CLAMP_WEIGHTS=data/clamp/clamp_compound_encoder_v1.npz \\
     LAZYSIM_SAND_WEIGHTS=data/sand/sand_encoder_v1.npz \\
+    LAZYSIM_MOLJEPA_WEIGHTS=data/moljepa/moljepa_4c912b4.safetensors \\
+    LAZYSIM_MONROE_WEIGHTS=data/monroe/monroe_encoder_v1.npz \\
     python scripts/build_reference_library.py
-python scripts/build_reference_library.py --add sand
+python scripts/build_reference_library.py --add moljepa -t 10
+
+``-t`` caps worker processes and threads (all CPUs by default); numpy is already
+loaded when the script reads it, so set ``OPENBLAS_NUM_THREADS`` too.
 
 Then upload with ``eosvc upload --path data/libraries``.
 """
 
+import argparse
 import csv
 import json
 import multiprocessing as mp
 import shutil
-import sys
 import urllib.error
 import urllib.request
 from collections import Counter
@@ -39,7 +45,9 @@ from lazy_sim.io import artifacts, remote
 from lazy_sim.io.remote import catalog_url, sha256
 
 NAME, VERSION, TITLE = "ersilia-reference", "v1", "Ersilia Reference Library"
-FEATURIZERS = ["clamp", "ecfp", "sand"]
+FEATURIZERS = ["clamp", "ecfp", "sand", "moljepa", "monroe"]
+# Featurizers whose licence restricts how their index and embeddings may be used
+LICENSES = {"moljepa": "CC BY-NC 4.0 (Mol-JEPA weights), non-commercial use only"}
 COMMIT = "7b4f378351cb480db61018198a19356eb288a3f7"
 SOURCE = (
     "https://github.com/ersilia-os/ersilia-model-hub-maintained-inputs/blob/"
@@ -113,12 +121,15 @@ def featurizer_entry(name):
     built_with = {"lazysim": fm["lazysim_version"], fm["engine"]: fm["engine_version"]}
     if "weights_sha256" in fm:
         built_with["weights_sha256"] = fm["weights_sha256"]
-    return {
+    entry = {
         "similarity": fm["similarity"],
         "built_with": built_with,
         "files": describe(OUT / fm["index_file"], OUT / f"{name}.json"),
         "embeddings": describe(OUT / f"{name}_embeddings.npy"),
     }
+    if name in LICENSES:
+        entry["license"] = LICENSES[name]
+    return entry
 
 
 def publish(built):
@@ -152,7 +163,7 @@ def publish(built):
     print(f"Wrote {OUT} and {catalog_path}")
 
 
-def add(names):
+def add(names, threads=None):
     """Index the published library with more featurizers and list them in the catalog."""
     catalog = published_catalog()
     published = remote.read_catalog()[NAME]
@@ -164,7 +175,7 @@ def add(names):
         assert sha256(path) == f["sha256"], f"{path} differs from the published file"
     missing = [n for n in names if n not in artifacts.featurizers_in(OUT)]
     if missing:
-        lazy_sim.index(None, OUT, featurizers=missing, embeddings=True)
+        lazy_sim.index(None, OUT, featurizers=missing, embeddings=True, threads=threads)
     for name in names:
         catalog["libraries"][NAME]["featurizers"][name] = featurizer_entry(name)
     catalog_path = LIBRARIES / "catalog.json"
@@ -172,15 +183,26 @@ def add(names):
     print(f"Added {', '.join(names)} to {OUT}; wrote {catalog_path}")
 
 
-def main():
+def main(threads=None):
     library_csv = prepare_input()
     built = BUILD / "index"
-    lazy_sim.index(library_csv, built, featurizers=FEATURIZERS, embeddings=True)
+    lazy_sim.index(
+        library_csv, built, featurizers=FEATURIZERS, embeddings=True, threads=threads
+    )
     publish(built)
 
 
 if __name__ == "__main__":
-    if sys.argv[1:2] == ["--add"]:
-        add(sys.argv[2:])
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--add",
+        nargs="+",
+        metavar="FEATURIZER",
+        help="Add featurizers to the published library instead of building it.",
+    )
+    parser.add_argument("-t", "--threads", type=int)
+    args = parser.parse_args()
+    if args.add:
+        add(args.add, args.threads)
     else:
-        main()
+        main(args.threads)

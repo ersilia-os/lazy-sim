@@ -12,7 +12,7 @@ How each lazy-sim featurizer represents molecules, where it comes from, how it w
 
 Principles shared by all featurizers:
 - **SMILES are used exactly as given.** lazy-sim never standardises or strips salts; curation happens upstream.
-- **No torch.** Neural featurizers are re-implemented in numpy and checked against their original code. Their weights are converted once, hosted by Ersilia, and downloaded once to `~/lazysim/models/`.
+- **No torch.** Neural featurizers are re-implemented in numpy and checked against their original code. Their weights are downloaded once to `~/lazysim/models/`: converted and hosted by Ersilia, except Mol-JEPA's, which are read as released on Hugging Face.
 - **Two ways to search.** Every library is searched through its index. With `--embeddings`, a library also keeps every molecule's full vector, which gives the exact answer the evaluation scripts compare against.
 
 **How the numbers below were measured.**
@@ -238,7 +238,7 @@ SAND does about 50× more work per molecule than CLAMP. On a 16-thread laptop:
 - **Licence: CC BY-NC 4.0, non-commercial use only.**
   - The licence covers the code and the weights.
   - Commercial use needs the authors' written permission.
-  - lazy-sim prints this notice whenever it needs the weights.
+  - lazy-sim prints this notice whenever it needs the weights, and `lazysim catalog --remote` shows it below the table for published Mol-JEPA indexes.
 - **On the Ersilia Model Hub:** [eos9q2i](https://github.com/ersilia-os/eos9q2i).
 - **What it captures:**
   - Mol-JEPA was trained by masking whole modalities across 4.69M compounds: a molecular graph, ECFP4, quantum-chemistry and structural embeddings, descriptors, and bioactivity labels.

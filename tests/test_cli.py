@@ -205,6 +205,7 @@ def test_fetch_and_catalog(library, home, tmp_path, monkeypatch):
             "files": files(fm["index_file"], f"{name}.json"),
             "embeddings": files(f"{name}_embeddings.npy"),
         }
+    featurizers["moljepa"]["license"] = "CC BY-NC 4.0"
     entry = {
         "title": "Tiny test library",
         "version": "v1",
@@ -215,7 +216,8 @@ def test_fetch_and_catalog(library, home, tmp_path, monkeypatch):
     (root / "catalog.json").write_text(json.dumps({"libraries": {"tiny": entry}}))
     monkeypatch.setenv("LAZYSIM_CATALOG_URL", (root / "catalog.json").as_uri())
 
-    assert "tiny" in _run("catalog", "--remote")
+    shown = _run("catalog", "--remote")
+    assert "tiny" in shown and "moljepa: CC BY-NC 4.0" in shown
     assert "No libraries" in _run("catalog")
     _run("fetch", "tiny", "-f", "clamp")
     fetched = home / "libraries" / "tiny"
