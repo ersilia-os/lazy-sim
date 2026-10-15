@@ -2,13 +2,14 @@
 
 Two searches run, each in a fresh process:
 - Indexed runs the real ``lazysim search`` command, which searches the
-  featurizer's index (turbovec for CLAMP and SAND, FPSim2 for ECFP). Timers around
-  its search engine record loading and searching; the remaining time goes to
-  reading the queries, writing the hits CSV, and starting and stopping the process.
+  featurizer's index (turbovec for the neural featurizers, FPSim2 for ECFP).
+  Timers around its search engine record loading and searching; the remaining time
+  goes to reading the queries, writing the hits CSV, and starting and stopping the
+  process.
 - Embeddings (exact) does the same work, but compares each query with every stored
-  embedding (cosine for CLAMP and SAND, Tanimoto for ECFP). It runs only when the
-  library has the featurizer's embeddings (``lazysim fetch NAME -f FEATURIZER
-  --embeddings``).
+  embedding (cosine for the neural featurizers, Tanimoto for ECFP). It runs only
+  when the library has the featurizer's embeddings (``lazysim fetch NAME -f
+  FEATURIZER --embeddings``).
 
 The total is measured from launching the process until it exits. Before each run,
 the model and library files are dropped from the system's file cache, so loading

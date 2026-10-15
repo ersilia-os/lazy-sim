@@ -7,6 +7,8 @@ How each lazy-sim featurizer represents molecules, where it comes from, how it w
 | `clamp` | Bioactivity-aware embedding (768 numbers) | Cosine | [turbovec](https://pypi.org/project/turbovec/), 4-bit (approximate) | RDKit + numpy |
 | `ecfp` | Substructures, ECFP6 (2,048 bits) | Tanimoto | [FPSim2](https://github.com/chembl/FPSim2) (exact) | RDKit |
 | `sand` | 3D shape (512 numbers) | Cosine | turbovec, 4-bit (approximate) | RDKit + numpy |
+| `moljepa` | Biological, phenotypic and quantum context predicted from the graph (512 numbers); **non-commercial use only** | Cosine | turbovec, 4-bit (approximate) | RDKit + numpy |
+| `monroe` | Structure and stereochemistry learned from quantum-chemical and bioassay data (720 numbers) | Cosine | turbovec, 4-bit (approximate) | RDKit + numpy |
 
 Principles shared by all featurizers:
 - **SMILES are used exactly as given.** lazy-sim never standardises or strips salts; curation happens upstream.
@@ -224,3 +226,169 @@ SAND does about 50× more work per molecule than CLAMP. On a 16-thread laptop:
 | Time embeddings | 30.0 s |
 
 - **Where the time goes:** embedding the 1,000 queries takes about 20 s, so SAND's indexed search is only a little faster than going through every embedding. The search itself takes a few seconds.
+
+## Mol-JEPA
+
+### Source
+
+- **Authors:** Boehringer Ingelheim.
+  - Preprint on [arXiv](https://arxiv.org/abs/2608.22642) (2026).
+  - Code at [Boehringer-Ingelheim/mol-jepa](https://github.com/Boehringer-Ingelheim/mol-jepa).
+  - Weights on Hugging Face at [Flogrammer/Mol-JEPA](https://huggingface.co/Flogrammer/Mol-JEPA).
+- **Licence: CC BY-NC 4.0, non-commercial use only.**
+  - The licence covers the code and the weights.
+  - Commercial use needs the authors' written permission.
+  - lazy-sim prints this notice whenever it needs the weights.
+- **On the Ersilia Model Hub:** [eos9q2i](https://github.com/ersilia-os/eos9q2i).
+- **What it captures:**
+  - Mol-JEPA was trained by masking whole modalities across 4.69M compounds: a molecular graph, ECFP4, quantum-chemistry and structural embeddings, descriptors, and bioactivity labels.
+  - Per the authors, its embedding carries predicted biological, phenotypic and quantum context.
+  - From a SMILES, only the graph is observed; the other modalities are treated as missing.
+
+### What lazy-sim computes
+
+**Graph.** It reproduces molfeat 0.10.1's `AdjGraphTransformer`, with explicit hydrogens and canonical atom order.
+- The molecule is parsed from the SMILES, all hydrogens become atoms, and the atoms are renumbered by RDKit's canonical ranking. Nothing else is done to the molecule.
+- **82 atom features:** chirality tag, degree, formal charge, hybridisation, implicit valence, aromatic, possible chiral centre, in ring, radical electrons, element (43 symbols, H included) and H count.
+- **17 bond features:** direction, conjugated, in ring, stereo, type, topological distance and shared ring.
+- molfeat concatenates its feature blocks in alphabetical order, and lazy-sim keeps that order.
+- Every bond is used in both directions.
+
+**Network.** About 27M of Mol-JEPA's 45M parameters, run in numpy.
+1. A linear layer, 82 → 512.
+2. Three graph-attention layers (PyG `TransformerConv`).
+   - Each has 8 heads, each 512 wide, averaged; bond features are added to the keys and values.
+   - Each is followed by GELU, a residual connection and LayerNorm.
+3. Max pooling over atoms, then a linear layer, 512 → 512: the graph token.
+4. A summary token and the graph token, each with a learned position, go through Mol-JEPA's 2-layer transformer: 4 heads, normalisation before each block, a 2,048-wide feed-forward, and a final LayerNorm. The missing modalities are masked out.
+5. A linear layer on the summary token gives the 512 numbers.
+
+**Differences from the original.** lazy-sim L2-normalises the output so cosine is a dot product. The original's vectors have lengths of about 2.2–2.6.
+
+The code is in [`src/lazy_sim/featurizers/moljepa.py`](../src/lazy_sim/featurizers/moljepa.py).
+
+### Weights
+
+- **Source:** read directly from Hugging Face's `model.safetensors`, pinned to revision `4c912b4`.
+  - Size: 181,651,424 bytes.
+  - sha256: `a443592193075334b55483501f1e04cdf4ef9c461db103f687ba4335b036cf14`.
+- **No conversion and no re-hosting.** lazy-sim reads the 92 tensors it needs, out of 216, with numpy alone.
+- **Download and checks:**
+  - Downloaded once to `~/lazysim/models/`; `LAZYSIM_MOLJEPA_WEIGHTS` points to a local copy instead.
+  - The sha256 is checked at every load and recorded in each library.
+
+### Checked against the original
+
+- **The reference:** Reference Library molecules embedded with Mol-JEPA's own code, run offline from the pinned snapshot that eos9q2i stores.
+  - The setup was torch 2.8, transformers 4.50.3, molfeat 0.10.1 and RDKit 2026.3.4.
+- **Result on 10,000 random molecules:**
+  - 9,999 graphs are identical to molfeat's, features and edge order, and their embeddings agree within 1e-6 (median 8e-8).
+  - The remaining molecule differs because of RDKit's version: in a furan inside a large ring system, RDKit 2026.3.4 sees 5 aromatic atoms and 2026.3.6, which lazy-sim uses, sees none. Its cosine to the original is 0.90. SAND's check flagged the same molecule.
+- **Kept as a test:** `tests/test_cli.py::test_moljepa_matches_original`.
+  - It embeds 20 molecules and compares them with the original's embeddings (`tests/data/moljepa_reference.npy`).
+  - Those reference embeddings come from [`scripts/export_moljepa_reference.py`](../scripts/export_moljepa_reference.py), which runs Mol-JEPA's own code offline from the pinned snapshot. It's the counterpart of the other featurizers' export scripts; there are no weights to export.
+  - The largest allowed difference is 1e-5.
+
+### Speed
+
+On a 16-thread laptop:
+
+| | Molecules per second |
+|---|---|
+| lazy-sim (numpy, one process) | ~65–75 |
+| Original (torch 2.8, 16 threads, including molfeat) | 28 |
+
+- **Why the port is faster:** lazy-sim rearranges each attention layer with the same result, so the work per bond is on 512-wide inputs and 17 bond features rather than 4,096-wide keys and values.
+  - The query absorbs the key and bond projections.
+  - The value and bond projections are applied once per atom, after summing over its bonds.
+- **Graphs are large:** with hydrogens as atoms, a Reference Library molecule averages 54 atoms.
+- **Queries:** embedding 1,000 queries takes about 15 s.
+- **Indexing:** the Ersilia Reference Library would take about 5–6 hours.
+
+## Monroe
+
+### Source
+
+- **Authors:** Banaszewski & Fitzgibbon.
+  - Preprint on [arXiv](https://doi.org/10.48550/arXiv.2608.18982) (2026).
+  - Code and weights at [blazejba/Monroe](https://github.com/blazejba/Monroe) (commit `57238ed`).
+- **Licence:**
+  - Monroe is MIT, Copyright (c) 2026 Blazej Banaszewski.
+  - Its attention layers are adapted from [GRIT](https://github.com/LiamMa/GRIT) (MIT, Copyright (c) 2023 Liheng Ma).
+  - Both notices are kept next to lazy-sim's copy of the weights.
+- **On the Ersilia Model Hub:** [eos8gop](https://github.com/ersilia-os/eos8gop). lazy-sim reproduces what eos8gop serves, including its fixed conformer seed.
+- **What it captures:**
+  - A graph transformer pretrained on 81 million PM6 quantum-chemistry calculations and 1,089 PubChem bioassays.
+  - Extra edges encode E/Z and R/S configuration, so stereoisomers get different inputs.
+  - The authors pair the embedding with a TabPFN head for few-shot property prediction; only the encoder is used here.
+
+### What lazy-sim computes
+
+**Molecule.**
+- The SMILES is converted to an InChI and the molecule is rebuilt from it, as Monroe does. Then hydrogens are added and RDKit's legacy stereo perception is applied.
+- When the InChI round trip fails, lazy-sim builds the molecule from the SMILES instead, so every library row gets an embedding. eos8gop returns NaN for these molecules; this is the one deliberate difference.
+
+**Conformer.**
+- One RDKit ETKDGv3 conformer: seed 42, random starting coordinates, chirality enforced, up to 500 iterations.
+- It is optimised with MMFF94s for up to 200 iterations, or with UFF where MMFF94s has no parameters.
+- If both fail, lazy-sim uses 2D coordinates.
+- The 3D coordinates only enter as distances, between bonded or stereo-linked atoms and from each atom to the origin.
+
+**Graph.**
+- **Per atom:** 8 numbers (radical electrons, electronegativity, first ionisation energy, covalent radius, melting point, formal charge, van der Waals radius, mass) and 11 categories (implicit and total valence, hybridisation, element, H count, aromatic, in ring, CIP label, period, degree, group).
+- **Per bond:** 4 categories (conjugated, in ring, type, stereo).
+- **Extra edges:** E/Z edges around stereo double bonds, and R/S edges around four-coordinate stereocentres.
+- **Virtual node:** each molecule gets one, linked to every atom.
+
+**Network.** 10 GRIT layers, 720 wide with 10 heads, 58.7M parameters, run in numpy.
+- **Inputs:** RBF expansions of the atom numbers and edge distances, plus random-walk encodings over 16 steps of the bond graph.
+- **Each layer:** attention over each node's incoming edges, with edge-dependent weights and biases; degree scaling; batch normalisation (fixed statistics); and a feed-forward block.
+- **Readout:** attention pooling with 10 heads over the atoms and the virtual node gives the 720 numbers.
+
+**Differences from the original.**
+- lazy-sim L2-normalises the output so cosine is a dot product.
+- It embeds molecules in batches; the original embeds one at a time. The results are the same, because the batch normalisation uses fixed statistics.
+
+The code is in [`src/lazy_sim/featurizers/monroe.py`](../src/lazy_sim/featurizers/monroe.py), with the periodic-table values in `_monroe_elements.py`.
+
+### Weights
+
+**Original:** `checkpoint/weights.pt` from blazejba/Monroe (300,057,823 bytes, sha256 `df996e8e…`), which eos8gop stores with eosvc. Only the encoder is kept.
+
+**Conversion:** [`scripts/export_monroe_weights.py`](../scripts/export_monroe_weights.py), which needs torch and is for maintainers. With eos8gop's code, it also writes the reference embeddings for the tests.
+
+**The converted file:** `monroe_encoder_v1.npz`.
+- It holds 338 arrays under Monroe's own parameter names.
+- Size: 234,838,658 bytes.
+- sha256: `39fffb2a21f44d72be6c1ca3b37fd24ad0300e3a13c04d5b564d62a97d1a02ba`.
+
+**Hosting:** on Ersilia's public S3 at `lazy-sim/data/monroe/`, next to Monroe's `LICENSE` and `NOTICE`.
+
+**Download and checks:** the same as CLAMP. It is downloaded once to `~/lazysim/models/` (`LAZYSIM_MONROE_WEIGHTS` points to a local copy), and its sha256 is checked at every load and recorded in each library.
+
+### Checked against the original
+
+- **The reference:** 10,000 random Reference Library molecules, embedded with eos8gop's own code: torch 2.14, torch_geometric 2.8 and RDKit 2026.3.6, the version lazy-sim also uses.
+- **Result:**
+  - For all 9,999 molecules the original can embed, the graphs are identical, 3D conformer coordinates included.
+  - The embeddings agree within 2.1e-6 (median 7.5e-8).
+  - The remaining molecule fails eos8gop's InChI round trip, and lazy-sim embeds it from its SMILES.
+- **Kept as a test:** `tests/test_cli.py::test_monroe_matches_original`.
+  - It embeds 20 molecules and compares them with eos8gop's embeddings (`tests/data/monroe_reference.npy`).
+  - One of them, cisplatin, uses the 2D-coordinate fallback.
+  - The largest allowed difference is 1e-5.
+- **Reproducibility:** conformers depend on RDKit's version, so the embeddings match only with RDKit 2026.3.6. Another CPU architecture, such as ARM, may also give slightly different conformers.
+
+### Speed
+
+Monroe is the heaviest featurizer: 10 layers over about 4 edges per atom, each 720 wide, plus a 3D conformer per molecule. On a 16-thread laptop:
+
+| | Molecules per second |
+|---|---|
+| Network, lazy-sim (numpy, one process) | ~18–20 |
+| Conformers and graphs, lazy-sim (16 worker processes) | ~84 (about 0.2 s per molecule each) |
+| Original (eos8gop, one molecule at a time, 1 thread per process) | 3.4 per process |
+
+- **Where the network's time goes:** matrix products take about 58%, on all threads; the rest is per-edge numpy work on one thread.
+- **Queries:** conformers are slow, so Monroe builds query conformers in worker processes from 100 queries (`POOL_MIN_QUERIES`; the other featurizers wait for 5,000). 300 queries take about 37 s.
+- **Indexing:** the Ersilia Reference Library would take about a day.

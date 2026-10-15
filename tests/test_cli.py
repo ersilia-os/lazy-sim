@@ -1,10 +1,10 @@
-"""Smoke tests for the lazysim CLI, plus parity with the original CLAMP and SAND.
+"""Smoke tests for the lazysim CLI, plus parity with the original neural featurizers.
 
-The tests use a temporary lazy-sim home. The CLAMP and SAND weights are downloaded
-into it once, unless ``LAZYSIM_CLAMP_WEIGHTS`` and ``LAZYSIM_SAND_WEIGHTS`` point to
-local copies. Everything else runs
-offline: ``fetch`` reads a catalog of file:// URLs. The ECFP parts need the
-``[ecfp]`` extra and are skipped without it.
+The tests use a temporary lazy-sim home. The weights of the neural featurizers are
+downloaded into it once, unless ``LAZYSIM_<NAME>_WEIGHTS`` (CLAMP, SAND, MOLJEPA,
+MONROE) point to local copies. Everything else runs offline:
+``fetch`` reads a catalog of file:// URLs. The ECFP parts need the ``[ecfp]`` extra
+and are skipped without it.
 """
 
 import csv
@@ -20,14 +20,15 @@ from click.testing import CliRunner
 from rdkit import Chem
 
 from lazy_sim.cli import cli
-from lazy_sim.featurizers import clamp, ecfp, sand
+from lazy_sim.featurizers import clamp, ecfp, moljepa, monroe, sand
 from lazy_sim.io.remote import sha256
 from lazy_sim.io.tables import HITS_COLUMNS
 
 DATA = Path(__file__).parent / "data"
 K = 10
 HAS_FPSIM2 = importlib.util.find_spec("FPSim2") is not None
-FEATURIZERS = ["clamp", "ecfp", "sand"] if HAS_FPSIM2 else ["clamp", "sand"]
+DENSE = ["clamp", "moljepa", "monroe", "sand"]
+FEATURIZERS = sorted(DENSE + ["ecfp"]) if HAS_FPSIM2 else DENSE
 needs_fpsim2 = pytest.mark.skipif(not HAS_FPSIM2, reason="needs lazy-sim[ecfp]")
 
 
@@ -83,7 +84,7 @@ def test_index(library):
     )
     assert not (library / clamp.WEIGHTS_FILE).exists()
     assert sha256(clamp.ensure_weights()) == clamp.WEIGHTS_SHA256
-    for feat in (clamp, sand):
+    for feat in (clamp, moljepa, monroe, sand):
         embeddings = np.load(library / f"{feat.NAME}_embeddings.npy")
         assert embeddings.shape == (200, feat.DIM)
         assert np.allclose(np.linalg.norm(embeddings, axis=1), 1, atol=1e-5)
@@ -99,7 +100,7 @@ def test_search_and_info(library, tmp_path):
     assert (
         no_featurizer.exit_code != 0 and "Missing option '-f'" in no_featurizer.output
     )
-    for featurizer in ("clamp", "sand"):
+    for featurizer in DENSE:
         _run(*args, "-k", K, "-f", featurizer)
         hits = _read(hits_csv)
         assert tuple(hits[0]) == HITS_COLUMNS
@@ -252,4 +253,22 @@ def test_sand_matches_original(home):
     reference = np.load(DATA / "sand_reference.npy")
     graphs = sand.fingerprints([row["smiles"] for row in rows])
     embeddings = sand.encode(sand.load_weights(), graphs)
+    assert np.abs(embeddings - reference).max() < 1e-5
+
+
+def test_moljepa_matches_original(home):
+    rows = _read(DATA / "reference_smiles.csv")
+    reference = np.load(DATA / "moljepa_reference.npy")  # not normalised
+    reference /= np.linalg.norm(reference, axis=1, keepdims=True)
+    graphs = moljepa.fingerprints([row["smiles"] for row in rows])
+    embeddings = moljepa.encode(moljepa.load_weights(), graphs)
+    assert np.abs(embeddings - reference).max() < 1e-5
+
+
+def test_monroe_matches_original(home):
+    rows = _read(DATA / "reference_smiles.csv")
+    reference = np.load(DATA / "monroe_reference.npy")  # not normalised
+    reference /= np.linalg.norm(reference, axis=1, keepdims=True)
+    graphs = monroe.fingerprints([row["smiles"] for row in rows])
+    embeddings = monroe.encode(monroe.load_weights(), graphs)
     assert np.abs(embeddings - reference).max() < 1e-5

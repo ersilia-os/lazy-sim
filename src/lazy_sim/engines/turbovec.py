@@ -13,7 +13,7 @@ from ..utils.parallel import ChunkPool
 BITS = 4
 CHUNK = 50_000
 CALIBRATION_SIZE = 2_048
-POOL_MIN_QUERIES = 5_000
+POOL_MIN_QUERIES = 5_000  # a featurizer can lower it with its own POOL_MIN_QUERIES
 
 
 def _embed(feat, weights, fps):
@@ -106,7 +106,8 @@ class Searcher:
         self.feat = feat
         self.weights = feat.load_weights()
         self.idx = turbovec.TurboQuantIndex.load(str(folder / manifest["index_file"]))
-        processes = threads if n_queries >= POOL_MIN_QUERIES else 1
+        enough = getattr(feat, "POOL_MIN_QUERIES", POOL_MIN_QUERIES)
+        processes = threads if n_queries >= enough else 1
         self.pool = ChunkPool(feat.fingerprints, processes)
 
     def __enter__(self):

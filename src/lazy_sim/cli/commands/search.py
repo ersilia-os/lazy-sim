@@ -38,7 +38,8 @@ def search_cmd():
         "--featurizer",
         required=True,
         type=click.Choice(AVAILABLE),
-        help="Index to search: clamp (cosine), ecfp (Tanimoto) or sand (cosine).",
+        help="Index to search: clamp (cosine), ecfp (Tanimoto), sand, moljepa or monroe "
+        "(cosine).",
     )
     @threads_option
     def search(input_csv, artifacts_dir, output_csv, k, featurizer, threads):

@@ -3,7 +3,7 @@
 A tool from the [Ersilia Open Source Initiative](https://ersilia.io) that finds the nearest neighbours of query molecules in libraries of millions of compounds, on a CPU.
 
 ```bash
-pip install git+https://github.com/ersilia-os/lazy-sim.git                       # CLAMP and SAND
+pip install git+https://github.com/ersilia-os/lazy-sim.git                       # CLAMP, SAND, Mol-JEPA, Monroe
 pip install "lazy-sim[ecfp] @ git+https://github.com/ersilia-os/lazy-sim.git"   # plus ECFP
 ```
 
@@ -22,7 +22,7 @@ pip install "lazy-sim[ecfp] @ git+https://github.com/ersilia-os/lazy-sim.git"   
 - Libraries need `smiles` and `id` columns. Queries need `smiles`; without `id`, they are named by InChIKey. SMILES are used exactly as given.
 - Libraries live in `~/lazysim/libraries/` (set `LAZYSIM_HOME` to move it); `-a` takes a name there or a path.
 - `--embeddings` on `fetch` or `index` also keeps the full vectors, for your own analyses.
-- Model weights (CLAMP: 174 MB, SAND: 112 MB) are downloaded once, to `~/lazysim/models/`.
+- Model weights (CLAMP: 174 MB, SAND: 112 MB, Mol-JEPA: 182 MB, Monroe: 235 MB) are downloaded once, to `~/lazysim/models/`.
 
 ## Featurizers
 
@@ -33,6 +33,8 @@ pip install "lazy-sim[ecfp] @ git+https://github.com/ersilia-os/lazy-sim.git"   
 | `clamp` | Cosine of [CLAMP](https://github.com/ml-jku/clamp) embeddings, approximate | [turbovec](https://pypi.org/project/turbovec/), 4-bit |
 | `ecfp` | Tanimoto of ECFP6 (2048 bits), exact | [FPSim2](https://github.com/chembl/FPSim2), needs `[ecfp]` |
 | `sand` | Cosine of [SAND](https://github.com/pfizer-opensource/SAND) embeddings, which track 3D shape overlap; approximate | turbovec, 4-bit |
+| `moljepa` | Cosine of [Mol-JEPA](https://github.com/Boehringer-Ingelheim/mol-jepa) embeddings; approximate. **Non-commercial use only (CC BY-NC 4.0)** | turbovec, 4-bit |
+| `monroe` | Cosine of [Monroe](https://github.com/blazejba/Monroe) embeddings (graph transformer with a 3D conformer); approximate | turbovec, 4-bit |
 
 CLAMP scores are compressed: random pairs score about 0.5 and close analogues above 0.9.
 

@@ -228,15 +228,27 @@ def prepare_weights(raw):
     def norm(name):
         return raw[f"{name}.weight"], raw[f"{name}.bias"]
 
+    def heads(name):  # (8 * 512, d) -> (8, 512, d)
+        return np.ascontiguousarray(raw[name].reshape(8, 512, -1))
+
+    def stacked(name):  # (8 * 512, d) -> (8 * d, 512): head-major rows
+        w = raw[name].reshape(8, 512, -1).transpose(0, 2, 1)
+        return np.ascontiguousarray(w.reshape(-1, 512))
+
     convs = []
     for i in range(3):
         conv = f"{_GRAPH}convs.{i}."
         convs.append(
             {
                 "query": linear(conv + "lin_query"),
-                "key": linear(conv + "lin_key"),
-                "value": linear(conv + "lin_value"),
-                "edge": linear(conv + "lin_edge", bias=False)[0],
+                # Per head: key (head, query channel, input) and edge (head,
+                # query channel, bond feature) weights, to fold into the query;
+                # value and edge weights stacked to apply after aggregating.
+                "key": heads(conv + "lin_key.weight"),
+                "edge": heads(conv + "lin_edge.weight"),
+                "value_after": stacked(conv + "lin_value.weight"),
+                "edge_after": stacked(conv + "lin_edge.weight"),
+                "value_bias": raw[conv + "lin_value.bias"].reshape(8, -1),
                 "skip": linear(conv + "lin_skip"),
                 "norm": norm(f"{_GRAPH}norms.{i}"),
             }
@@ -310,14 +322,29 @@ def _incoming_slots(dst, n):
 
 
 def _transformer_conv(x, src, bonds, slots, conv, heads=8):
-    """PyG ``TransformerConv`` (heads averaged, bond features in keys and values)."""
+    """PyG ``TransformerConv`` (heads averaged, bond features in keys and values).
+
+    Rearranged so that per-edge work is on 512-wide inputs and 17 bond features
+    instead of 4,096-wide keys and values, with the same result:
+
+    - a head's score ``q_i . (k_j + W_e e_j)`` is ``(q_i W_k) . x_j +
+      (q_i W_e) . e_j`` plus ``q_i . b_k``, which is the same for all of atom
+      i's edges and so leaves the softmax unchanged;
+    - its output ``sum_j a_ij (v_j + W_e e_j)`` is ``(sum_j a_ij x_j) W_v^T +
+      (sum_j a_ij e_j) W_e^T + b_v sum_j a_ij``, so the value and edge
+      projections are applied once per atom, after aggregating.
+    """
     n, width = x.shape
     query = _dense(x, conv["query"]).reshape(n, heads, width)
-    key = _dense(x, conv["key"]).reshape(n, heads, width)
-    value = _dense(x, conv["value"]).reshape(n, heads, width)
-    edge = (bonds @ conv["edge"]).reshape(len(bonds), heads, width)
+    by_head = query.transpose(1, 0, 2)  # batched products per head use BLAS
+    query_key = np.ascontiguousarray((by_head @ conv["key"]).transpose(1, 0, 2))
+    query_edge = np.ascontiguousarray((by_head @ conv["edge"]).transpose(1, 0, 2))
     scores = [
-        np.einsum("thc,thc->th", query[t], key[src[e]] + edge[e]) / math.sqrt(width)
+        (
+            (query_key[t] @ x[src[e]][:, :, None])[:, :, 0]
+            + (query_edge[t] @ bonds[e][:, :, None])[:, :, 0]
+        )
+        / math.sqrt(width)
         for t, e in slots
     ]
     top = np.full((n, heads), -np.inf, np.float32)  # softmax over each atom's edges
@@ -329,11 +356,20 @@ def _transformer_conv(x, src, bonds, slots, conv, heads=8):
         w = np.exp(s - top[t])
         total[t] += w
         weights.append(w)
-    out = np.zeros((n, heads, width), np.float32)
+    inputs = np.zeros((n, heads, width), np.float32)  # sum_j a_ij x_j, per head
+    features = np.zeros((n, heads, bonds.shape[1]), np.float32)  # sum_j a_ij e_j
+    attended = np.zeros((n, heads), np.float32)  # sum_j a_ij: 1, or 0 without edges
     for (t, e), w in zip(slots, weights):
         alpha = w / (total[t] + 1e-16)
-        out[t] += alpha[:, :, None] * (value[src[e]] + edge[e])
-    return out.mean(axis=1) + _dense(x, conv["skip"])
+        inputs[t] += alpha[:, :, None] * x[src[e]][:, None, :]
+        features[t] += alpha[:, :, None] * bonds[e][:, None, :]
+        attended[t] += alpha
+    out = (
+        inputs.reshape(n, -1) @ conv["value_after"]
+        + features.reshape(n, -1) @ conv["edge_after"]
+        + attended @ conv["value_bias"]
+    ) / heads
+    return out + _dense(x, conv["skip"])
 
 
 def _attention(x, layer, heads=4):

@@ -2,7 +2,7 @@
 
 The library needs the featurizer's embeddings (``lazysim fetch NAME -f FEATURIZER
 --embeddings``). Comparing each query with every embedding gives the exact answer
-(cosine for CLAMP and SAND, Tanimoto for ECFP).
+(cosine for CLAMP, SAND, Mol-JEPA and Monroe; Tanimoto for ECFP).
 
 1. Draw random library molecules as queries (seeded).
 2. Search the index with ``lazy_sim.search``, as ``lazysim search`` does, for k + 1
@@ -54,7 +54,13 @@ def tanimoto(queries, block):
     return np.divide(common, union, out=np.zeros_like(common), where=union > 0)
 
 
-SIMILARITY = {"clamp": cosine, "ecfp": tanimoto, "sand": cosine}
+SIMILARITY = {
+    "clamp": cosine,
+    "ecfp": tanimoto,
+    "sand": cosine,
+    "moljepa": cosine,
+    "monroe": cosine,
+}
 
 
 def neighbour_counts(value):
