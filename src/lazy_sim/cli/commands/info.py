@@ -6,9 +6,9 @@ from . import library_option, lazysim_cli, run_or_fail
 
 
 def source(manifest):
-    """Describe where a library comes from: an Ersilia release or a local index."""
+    """Describe where a library comes from: an Ersilia library or a local index."""
     src = manifest.get("source")
-    return f"{src['name']} {src['version']}" if src else "indexed locally"
+    return src["name"] if src else "indexed locally"
 
 
 def sizes(folder, featurizer, manifest):

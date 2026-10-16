@@ -18,7 +18,7 @@ The library needs the featurizer's embeddings (``lazysim fetch NAME -f FEATURIZE
 
 Usage
 -----
-python scripts/evaluate_recall.py ersilia-reference -f clamp -k 1,10,100,1000
+python scripts/evaluate_recall.py ersilia_reference_library_1M_v0 -f clamp -k 1,10,100,1000
 """
 
 import argparse

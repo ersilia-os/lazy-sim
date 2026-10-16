@@ -1,4 +1,4 @@
-"""Maintainer script: build the ``ersilia-reference`` library that ``lazysim fetch`` serves.
+"""Maintainer script: build the Ersilia Reference Library that ``lazysim fetch`` serves.
 
 1. Download the Ersilia Reference Library (pinned commit) and check its sha256.
 2. Use each molecule's InChIKey as its id; SMILES are kept exactly as given.
@@ -7,9 +7,10 @@
 4. Lay the files out as on S3 under ``data/libraries/``, and write ``catalog.json``
    as the published one plus this library (so nobody else's entries are lost).
 
-Published versions are never edited: a rebuild goes in a new version folder. The
-one exception is ``--add FEATURIZER``, which indexes the published library with
-one more featurizer. It only adds files (the featurizer's index, manifest and
+The library is published as ``ersilia_reference_library_1M_v0``. Published
+libraries are never edited: a rebuild is published under a new name (``..._v1``).
+The one exception is ``--add FEATURIZER``, which indexes the published library
+with one more featurizer. It only adds files (the featurizer's index, manifest and
 embeddings) and a catalog entry; the library's own files stay as published, so
 rows stay aligned for everyone who already fetched it.
 
@@ -44,7 +45,8 @@ import lazy_sim
 from lazy_sim.io import artifacts, remote
 from lazy_sim.io.remote import catalog_url, sha256
 
-NAME, VERSION, TITLE = "ersilia-reference", "v1", "Ersilia Reference Library"
+NAME = "ersilia_reference_library_1M_v0"
+VERSION, TITLE = "v0", "Ersilia Reference Library"
 FEATURIZERS = ["clamp", "ecfp", "sand", "moljepa", "monroe"]
 # Featurizers whose licence restricts how their index and embeddings may be used
 LICENSES = {"moljepa": "CC BY-NC 4.0 (Mol-JEPA weights), non-commercial use only"}
@@ -57,7 +59,7 @@ RAW = SOURCE.replace("github.com", "raw.githubusercontent.com").replace("/blob/"
 SOURCE_SHA256 = "9437df08beca7af51e2b519c4710b04385e12e4d29abb66acb267c28f9934658"
 BUILD = Path("tmp/build") / NAME
 LIBRARIES = Path("data/libraries")
-OUT = LIBRARIES / NAME / VERSION
+OUT = LIBRARIES / NAME
 
 
 def inchikeys(smiles_list):
@@ -80,7 +82,7 @@ def prepare_input():
     with mp.get_context("spawn").Pool() as pool:
         keys = [k for batch in pool.map(inchikeys, batches) for k in batch]
     ids = [k or f"row-{i + 1}" for i, k in enumerate(keys)]
-    library_csv = BUILD / f"ersilia_reference_library_{VERSION}.csv"
+    library_csv = BUILD / f"{NAME}.csv"
     with open(library_csv, "w", newline="") as fh:
         writer = csv.writer(fh)
         writer.writerow(["id", "smiles"])

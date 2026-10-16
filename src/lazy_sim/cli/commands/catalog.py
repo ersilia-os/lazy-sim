@@ -51,7 +51,6 @@ def _remote_table(catalog):
         caption=f"Each library also downloads its ids and SMILES once ({shared}).",
     )
     table.add_column("Name", no_wrap=True)
-    table.add_column("Title")
     for column in ("Featurizer", "Similarity", "Molecules", "Index", "Embeddings"):
         table.add_column(column, no_wrap=True)
     table.add_column("Fetched", no_wrap=True)
@@ -59,7 +58,6 @@ def _remote_table(catalog):
         for featurizer, published in sorted(entry["featurizers"].items()):
             table.add_row(
                 name,
-                entry["title"],
                 featurizer,
                 published["similarity"],
                 f"{entry['molecules']:,}",

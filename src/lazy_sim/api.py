@@ -277,8 +277,9 @@ def search(input_csv, artifacts_dir, output_csv, featurizer, k=100, threads=None
         Output with one row per hit: ``query_id, query_smiles, rank, hit_id,
         hit_smiles, similarity``.
     featurizer : str
-        Index to search: ``"clamp"`` (cosine of CLAMP embeddings) or ``"ecfp"``
-        (exact Tanimoto of ECFP fingerprints).
+        Index to search: ``"ecfp"`` (exact Tanimoto of ECFP fingerprints), or
+        ``"clamp"``, ``"sand"``, ``"moljepa"`` or ``"monroe"`` (cosine of their
+        embeddings).
     k : int
         Hits per query.
     threads : int, optional

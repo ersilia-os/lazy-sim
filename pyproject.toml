@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "lazy-sim"
 version = "0.1.0"
-description = "Ultra-fast similarity search in large chemical libraries, by the Ersilia Open Source Initiative"
+description = "Fast similarity search in large chemical libraries, by the Ersilia Open Source Initiative"
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [
@@ -39,6 +39,9 @@ lazysim = "lazy_sim.cli:cli"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+lazy_sim = ["results/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

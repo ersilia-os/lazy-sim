@@ -21,7 +21,7 @@ the run with the median total is shown. The queries are random library molecules
 
 Usage
 -----
-python scripts/evaluate_speed.py ersilia-reference -f clamp -n 1000 -k 100
+python scripts/evaluate_speed.py ersilia_reference_library_1M_v0 -f clamp -n 1000 -k 100
 """
 
 import argparse

@@ -7,7 +7,7 @@ from ...featurizers import AVAILABLE
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(__version__, prog_name="lazysim")
 def lazysim_cli():
-    """Ultra-fast similarity search in large chemical libraries.
+    """Fast similarity search in large chemical libraries.
 
     lazy-sim is developed by the Ersilia Open Source Initiative (https://ersilia.io).
     """

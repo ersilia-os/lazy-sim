@@ -1,4 +1,4 @@
-"""Ultra-fast similarity search in large chemical libraries, by the Ersilia Open Source Initiative."""
+"""Fast similarity search in large chemical libraries, by the Ersilia Open Source Initiative."""
 
 from importlib.metadata import version
 

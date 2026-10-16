@@ -1,5 +1,6 @@
 from .commands import lazysim_cli
 from .commands.catalog import catalog_cmd
+from .commands.compare import compare_cmd
 from .commands.fetch import fetch_cmd
 from .commands.index import index_cmd
 from .commands.info import info_cmd
@@ -13,4 +14,5 @@ def create_lazysim_cli():
     search_cmd()
     catalog_cmd()
     info_cmd()
+    compare_cmd()
     return lazysim_cli
