@@ -2,20 +2,33 @@
 
 How each lazy-sim featurizer represents molecules, where it comes from, how it was checked against the original code, how well it searches, and [how the featurizers relate](#how-the-featurizers-relate).
 
-| `-f` | Captures | Similarity | Engine | Runs on |
-|---|---|---|---|---|
-| `clamp` | Bioactivity-aware embedding (768 numbers) | Cosine | [turbovec](https://pypi.org/project/turbovec/), 4-bit (approximate) | RDKit + numpy |
-| `ecfp` | Substructures, ECFP6 (2,048 bits) | Tanimoto | [FPSim2](https://github.com/chembl/FPSim2) (exact) | RDKit |
-| `sand` | 3D shape (512 numbers) | Cosine | turbovec, 4-bit (approximate) | RDKit + numpy |
-| `moljepa` | Biological, phenotypic and quantum context predicted from the graph (512 numbers); **non-commercial use only** | Cosine | turbovec, 4-bit (approximate) | RDKit + numpy |
-| `monroe` | Structure and stereochemistry learned from quantum-chemical and bioassay data (720 numbers) | Cosine | turbovec, 4-bit (approximate) | RDKit + numpy |
+| `-f` | Captures | Similarity, engine | Licence |
+|---|---|---|---|
+| `clamp` | Bioactivity-aware embedding (768 numbers) | Cosine, [turbovec](https://pypi.org/project/turbovec/) 4-bit (approximate) | GPL-3.0, plus the model terms |
+| `ecfp` | Substructures, ECFP6 (2,048 bits) | Tanimoto, [FPSim2](https://github.com/chembl/FPSim2) (exact) | No model |
+| `sand` | 3D shape (512 numbers) | Cosine, turbovec 4-bit (approximate) | Apache-2.0 |
+| `moljepa` | Biological, phenotypic and quantum context predicted from the graph (512 numbers) | Cosine, turbovec 4-bit (approximate) | **CC BY-NC 4.0, non-commercial use only** |
+| `monroe` | Structure and stereochemistry learned from quantum-chemical and bioassay data (720 numbers) | Cosine, turbovec 4-bit (approximate) | MIT |
+
+On the Ersilia Reference Library, measured as described in [How the numbers were measured](#how-the-numbers-were-measured):
+
+| `-f` | Recall@100 | 1,000 queries, indexed | 1,000 queries, embeddings | Index | Embeddings | A random molecule scores |
+|---|---|---|---|---|---|---|
+| [`clamp`](#clamp) | 0.952 | 7.5 s | 15.2 s | 527 MB | 4.16 GB | 0.52 |
+| [`ecfp`](#ecfp) | 1.000 | 10.1 s | 26.6 s | 245 MB | 347 MB | 0.09 |
+| [`sand`](#sand) | 0.966 | 24.7 s | 30.0 s | 353 MB | 2.78 GB | 0.06 |
+| [`moljepa`](#mol-jepa) | 0.963 | 18.0 s | 23.1 s | 353 MB | 2.78 GB | 0.12 |
+| [`monroe`](#monroe) | Not indexed yet | | | | | |
+
+The last column is the typical similarity of a random library molecule to a query. Scores are on different scales, so a score only means something next to its featurizer's own baseline.
 
 Principles shared by all featurizers:
-- **SMILES are used exactly as given.** lazy-sim never standardises or strips salts; curation happens upstream.
-- **No torch.** Neural featurizers are re-implemented in numpy and checked against their original code. Their weights are downloaded once to `~/lazysim/models/`: converted and hosted by Ersilia, except Mol-JEPA's, which are read as released on Hugging Face.
+- **SMILES are used exactly as given.** lazy-sim never standardises or strips salts. Curation happens upstream.
+- **No torch.** Everything runs on RDKit and numpy, plus FPSim2 for ECFP. Neural featurizers are re-implemented in numpy and checked against their original code. Their weights are downloaded once to `~/lazysim/models/`: converted and hosted by Ersilia, except Mol-JEPA's, which are read as released on Hugging Face.
 - **Two ways to search.** Every library is searched through its index. With `--embeddings`, a library also keeps every molecule's full vector, which gives the exact answer the evaluation scripts compare against.
 
-**How the numbers below were measured.**
+## How the numbers were measured
+
 - **Library and queries:** the Ersilia Reference Library (1,355,109 compounds), with 1,000 of its own molecules drawn at random (seed 0) as queries. Each query's own hit is left out.
 - **Machine:** a 16-thread laptop.
 - **Recall:** [`scripts/evaluate_recall.py`](../scripts/evaluate_recall.py). Recall@k is the share of the indexed top k that are true top-k neighbours, where a hit counts when its exact similarity reaches that of the true k-th neighbour.
@@ -23,7 +36,7 @@ Principles shared by all featurizers:
   - **Indexed** is the real `lazysim search` command, from launch to exit, for 100 hits per query.
   - **Embeddings** does the same work by comparing each query with every stored embedding.
   - Files are read from disk in every run, and the median of 5 runs is shown.
-- **How two featurizers relate:** [`scripts/compare_featurizers.py`](../scripts/compare_featurizers.py), on the hits `lazysim search` returns and on exact rankings; see [the last section](#how-the-featurizers-relate).
+- **How two featurizers relate:** [`scripts/compare_featurizers.py`](../scripts/compare_featurizers.py), on the hits `lazysim search` returns and on exact rankings. See [the last section](#how-the-featurizers-relate).
 
 ```bash
 python scripts/evaluate_recall.py ersilia_reference_library_1M_v0 -f clamp -k 10,100,1000
@@ -48,7 +61,7 @@ python scripts/compare_featurizers.py ersilia_reference_library_1M_v0 -f clamp -
 
 **Fingerprint.** It reproduces mhnreact's `getFingerprint(which="morganc+rdkc", fp_size=8192)`, quirks included:
 1. Take a Morgan count fingerprint (radius 2, feature invariants, chirality, bond types) and an RDKit path count fingerprint (paths up to 6 bonds), both unfolded.
-2. Fold each into 8,192 slots by `key mod 8192`. When two keys of the same fingerprint land in one slot, the last one wins rather than being added; this is mhnreact's behaviour.
+2. Fold each into 8,192 slots by `key mod 8192`. When two keys of the same fingerprint land in one slot, the last one wins rather than being added. This is mhnreact's behaviour.
 3. Add the two folded fingerprints and apply `log1p`.
 
 **Encoder.** It's CLAMP's compound encoder, an MLP of 8,192 → 4,096 → 2,048 → 768.
@@ -245,7 +258,7 @@ SAND does about 50× more work per molecule than CLAMP. On a 16-thread laptop:
 - **What it captures:**
   - Mol-JEPA was trained by masking whole modalities across 4.69M compounds: a molecular graph, ECFP4, quantum-chemistry and structural embeddings, descriptors, and bioactivity labels.
   - Per the authors, its embedding carries predicted biological, phenotypic and quantum context.
-  - From a SMILES, only the graph is observed; the other modalities are treated as missing.
+  - From a SMILES, only the graph is observed. The other modalities are treated as missing.
 
 ### What lazy-sim computes
 
@@ -259,7 +272,7 @@ SAND does about 50× more work per molecule than CLAMP. On a 16-thread laptop:
 **Network.** About 27M of Mol-JEPA's 45M parameters, run in numpy.
 1. A linear layer, 82 → 512.
 2. Three graph-attention layers (PyG `TransformerConv`).
-   - Each has 8 heads, each 512 wide, averaged; bond features are added to the keys and values.
+   - Each has 8 heads, each 512 wide, averaged. Bond features are added to the keys and values.
    - Each is followed by GELU, a residual connection and LayerNorm.
 3. Max pooling over atoms, then a linear layer, 512 → 512: the graph token.
 4. A summary token and the graph token, each with a learned position, go through Mol-JEPA's 2-layer transformer: 4 heads, normalisation before each block, a 2,048-wide feed-forward, and a final LayerNorm. The missing modalities are masked out.
@@ -276,7 +289,7 @@ The code is in [`src/lazy_sim/featurizers/moljepa.py`](../src/lazy_sim/featurize
   - sha256: `a443592193075334b55483501f1e04cdf4ef9c461db103f687ba4335b036cf14`.
 - **No conversion and no re-hosting.** lazy-sim reads the 92 tensors it needs, out of 216, with numpy alone.
 - **Download and checks:**
-  - Downloaded once to `~/lazysim/models/`; `LAZYSIM_MOLJEPA_WEIGHTS` points to a local copy instead.
+  - Downloaded once to `~/lazysim/models/`. `LAZYSIM_MOLJEPA_WEIGHTS` points to a local copy instead.
   - The sha256 is checked at every load and recorded in each library.
 
 ### Checked against the original
@@ -288,7 +301,7 @@ The code is in [`src/lazy_sim/featurizers/moljepa.py`](../src/lazy_sim/featurize
   - The remaining molecule differs because of RDKit's version: in a furan inside a large ring system, RDKit 2026.3.4 sees 5 aromatic atoms and 2026.3.6, which lazy-sim uses, sees none. Its cosine to the original is 0.90. SAND's check flagged the same molecule.
 - **Kept as a test:** `tests/test_cli.py::test_moljepa_matches_original`.
   - It embeds 20 molecules and compares them with the original's embeddings (`tests/data/moljepa_reference.npy`).
-  - Those reference embeddings come from [`scripts/export_moljepa_reference.py`](../scripts/export_moljepa_reference.py), which runs Mol-JEPA's own code offline from the pinned snapshot. It's the counterpart of the other featurizers' export scripts; there are no weights to export.
+  - Those reference embeddings come from [`scripts/export_moljepa_reference.py`](../scripts/export_moljepa_reference.py), which runs Mol-JEPA's own code offline from the pinned snapshot. It's the counterpart of the other featurizers' export scripts, with no weights to export.
   - The largest allowed difference is 1e-5.
 
 ### Speed
@@ -318,7 +331,7 @@ On a 16-thread laptop:
 | Time indexed | 18.0 s |
 | Time embeddings | 23.1 s |
 
-- **Where the time goes:** as with SAND, embedding the 1,000 queries takes most of it (about 15 s); the search itself takes a few seconds.
+- **Where the time goes:** as with SAND, embedding the 1,000 queries takes most of it (about 15 s). The search itself takes a few seconds.
 
 ## Monroe
 
@@ -335,13 +348,13 @@ On a 16-thread laptop:
 - **What it captures:**
   - A graph transformer pretrained on 81 million PM6 quantum-chemistry calculations and 1,089 PubChem bioassays.
   - Extra edges encode E/Z and R/S configuration, so stereoisomers get different inputs.
-  - The authors pair the embedding with a TabPFN head for few-shot property prediction; only the encoder is used here.
+  - The authors pair the embedding with a TabPFN head for few-shot property prediction. Only the encoder is used here.
 
 ### What lazy-sim computes
 
 **Molecule.**
 - The SMILES is converted to an InChI and the molecule is rebuilt from it, as Monroe does. Then hydrogens are added and RDKit's legacy stereo perception is applied.
-- When the InChI round trip fails, lazy-sim builds the molecule from the SMILES instead, so every library row gets an embedding. eos8gop returns NaN for these molecules; this is the one deliberate difference.
+- When the InChI round trip fails, lazy-sim builds the molecule from the SMILES instead, so every library row gets an embedding. eos8gop returns NaN for these molecules. This is the one deliberate difference.
 
 **Conformer.**
 - One RDKit ETKDGv3 conformer: seed 42, random starting coordinates, chirality enforced, up to 500 iterations.
@@ -357,12 +370,12 @@ On a 16-thread laptop:
 
 **Network.** 10 GRIT layers, 720 wide with 10 heads, 58.7M parameters, run in numpy.
 - **Inputs:** RBF expansions of the atom numbers and edge distances, plus random-walk encodings over 16 steps of the bond graph.
-- **Each layer:** attention over each node's incoming edges, with edge-dependent weights and biases; degree scaling; batch normalisation (fixed statistics); and a feed-forward block.
+- **Each layer:** attention over each node's incoming edges with edge-dependent weights and biases, degree scaling, batch normalisation (fixed statistics) and a feed-forward block.
 - **Readout:** attention pooling with 10 heads over the atoms and the virtual node gives the 720 numbers.
 
 **Differences from the original.**
 - lazy-sim L2-normalises the output so cosine is a dot product.
-- It embeds molecules in batches; the original embeds one at a time. The results are the same, because the batch normalisation uses fixed statistics.
+- It embeds molecules in batches, where the original embeds one at a time. The results are the same, because the batch normalisation uses fixed statistics.
 
 The code is in [`src/lazy_sim/featurizers/monroe.py`](../src/lazy_sim/featurizers/monroe.py), with the periodic-table values in `_monroe_elements.py`.
 
@@ -404,8 +417,8 @@ Monroe is the heaviest featurizer: 10 layers over about 4 edges per atom, each 7
 | Conformers and graphs, lazy-sim (16 worker processes) | ~84 (about 0.2 s per molecule each) |
 | Original (eos8gop, one molecule at a time, 1 thread per process) | 3.4 per process |
 
-- **Where the network's time goes:** matrix products take about 58%, on all threads; the rest is per-edge numpy work on one thread.
-- **Queries:** conformers are slow, so Monroe builds query conformers in worker processes from 100 queries (`POOL_MIN_QUERIES`; the other featurizers wait for 5,000). 300 queries take about 37 s.
+- **Where the network's time goes:** matrix products take about 58%, on all threads. The rest is per-edge numpy work on one thread.
+- **Queries:** conformers are slow, so Monroe builds query conformers in worker processes from 100 queries (`POOL_MIN_QUERIES`). The other featurizers wait for 5,000. 300 queries take about 37 s.
 - **Indexing:** the Ersilia Reference Library would take about a day.
 
 ## How the featurizers relate
@@ -418,7 +431,7 @@ The results come with lazy-sim, so the library need not be fetched:
 lazysim compare ersilia_reference_library_1M_v0 -f clamp -f ecfp
 ```
 
-So far, only CLAMP vs ECFP on the Ersilia Reference Library is stored.
+For the Ersilia Reference Library, every pair of CLAMP, ECFP, SAND and Mol-JEPA is stored. Monroe's pairs will follow once it is indexed.
 
 ### How to read the table
 
@@ -426,17 +439,17 @@ So far, only CLAMP vs ECFP on the Ersilia Reference Library is stored.
 
 **Three measures, one block each:**
 1. **Molecules in both top-k lists:** the share of the top k that both featurizers return. 1 means the same molecules, 0 means none in common.
-2. **Similarity to the query,** under one featurizer's own score: CLAMP's cosine or ECFP's Tanimoto, computed exactly from the embeddings. Each block has three rows:
-   - that featurizer's own top k, the most similar molecules by its own score, so the ceiling;
-   - random library molecules, the floor;
-   - the other featurizer's top k. Where it falls between the two says how similar the other's picks look to this featurizer.
+2. **Similarity to the query,** under one featurizer's own score (cosine, or Tanimoto for ECFP), computed exactly from the embeddings. Each block has three rows:
+   - That featurizer's own top k. These are the most similar molecules by its own score, so they are the ceiling.
+   - Random library molecules, the floor.
+   - The other featurizer's top k. Where it falls between the two says how similar the other's picks look to this featurizer.
 
    Compare rows within a block, never across blocks: the scales differ. A CLAMP cosine of 0.5 is a random molecule, while an ECFP Tanimoto of 0.5 is a close analogue.
 3. **Position in the other's ranking:** sort the whole library by one featurizer's similarity to the query, with 1 the most similar. The row shows where the other featurizer's top k sit in that order, as the median over the k molecules. A random molecule sits in the middle, at 677,554 of 1,355,109. A molecule tied with others in score takes the best of their positions.
 
 **What `lazysim search` returns, or exact rankings.** `lazysim compare` shows two tables:
-- the first compares the hits the indexes return (turbovec for CLAMP, FPSim2 for ECFP);
-- the second compares exact rankings computed from the embeddings, so the indexes play no part.
+- The first compares the hits the indexes return (turbovec for the neural featurizers, FPSim2 for ECFP).
+- The second compares exact rankings computed from the embeddings, so the indexes play no part.
 
 In both, similarities and positions are computed exactly, because an index only scores the hits it returns.
 
@@ -461,21 +474,40 @@ What `lazysim search` returns:
 | A random molecule | 677,554 | 677,554 | 677,554 |
 
 What it shows:
-- **They agree on the closest analogues.** A typical query gets 4 of the same molecules in both top 10s. The rest of each top 10 still sits near the top of the other's ranking: around 21st–23rd, out of 1.36M.
+- **They agree on the closest analogues.** A typical query gets 4 of the same molecules in both top 10s. The typical molecule of each top 10 sits around 21st–23rd in the other's ranking, out of 1.36M.
 - **They part quickly after that.** Only 18% of the top 100 and 8% of the top 1,000 are shared. The typical position of CLAMP's top 100 in ECFP's ranking is about 10,500th. That is still within the top 1% of the library, far from a random molecule's 677,554th.
 - **To each featurizer, the other's picks are similar but not the most similar.** Take the top 100:
-  - ECFP scores CLAMP's top 100 at 0.21 Tanimoto, between its own top 100 (0.35) and random molecules (0.09);
+  - ECFP scores CLAMP's top 100 at 0.21 Tanimoto, between its own top 100 (0.35) and random molecules (0.09).
   - CLAMP scores ECFP's top 100 at 0.73 cosine, between its own (0.85) and random molecules (0.52).
 - **Queries differ a lot.** At k = 10, a quarter of the queries share at most 2 molecules and another quarter at least 6.
 
 **The indexes change almost nothing.** The exact table, from `lazysim compare`, matches this one within 0.004 for shares and similarities and within 3% for positions. ECFP's index is exact. Its small differences come from ties: many molecules can share the k-th Tanimoto score, and FPSim2 and the exact search keep different ones among them.
 
+### All pairs
+
+The share of the top k that both featurizers return, for the typical query, from what `lazysim search` returns. The last column gives the typical position of each featurizer's top 10 in the other's ranking: A's in B's, then B's in A's.
+
+| A and B | k = 10 | k = 100 | k = 1,000 | Top 10, in the other's ranking |
+|---|---|---|---|---|
+| ECFP and SAND | 0.40 | 0.23 | 0.12 | 17 and 16 |
+| CLAMP and ECFP | 0.40 | 0.18 | 0.08 | 21 and 23 |
+| CLAMP and SAND | 0.30 | 0.15 | 0.06 | 36 and 35 |
+| ECFP and Mol-JEPA | 0.20 | 0.12 | 0.10 | 178 and 182 |
+| SAND and Mol-JEPA | 0.20 | 0.10 | 0.07 | 181 and 579 |
+| CLAMP and Mol-JEPA | 0.20 | 0.10 | 0.06 | 198 and 913 |
+
+- **CLAMP, ECFP and SAND agree on the closest analogues.** Each pair shares 3 or 4 of the top 10, and the typical molecule of each top 10 sits within the top 40 of the other's ranking.
+- **ECFP and SAND agree the most,** at every k.
+- **Mol-JEPA agrees least with the others.** It shares 2 of the top 10 with each of them, and the typical molecule of its top 10 sits between 182nd and 913th in their rankings.
+- **Every pair agrees far more than chance.** A random molecule sits at 677,554th, and two random top 10s of 1.36M molecules share almost nothing.
+- **The exact rankings give the same picture** for every pair: shares within 0.01, similarities within 0.004 and typical positions within 7%.
+
 ### Adding a pair
 
 ```bash
-python scripts/compare_featurizers.py ersilia_reference_library_1M_v0 -f clamp -f sand --save
+python scripts/compare_featurizers.py ersilia_reference_library_1M_v0 -f clamp -f monroe --save
 ```
 
 - The library needs both featurizers' indexes and embeddings (`lazysim fetch NAME -f A -f B --embeddings`).
 - `--save` adds the pair to `src/lazy_sim/results/<library>.json`, one file per library holding every pair compared. Commit that file and `lazysim compare` shows the new pair.
-- On the Ersilia Reference Library, CLAMP vs ECFP took about 3 minutes on 6 CPUs and 5.5 GB of memory.
+- On the Ersilia Reference Library, each pair took 2–3 minutes on 6 CPUs and 4–8 GB of memory.

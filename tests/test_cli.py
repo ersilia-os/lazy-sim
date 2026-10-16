@@ -279,5 +279,5 @@ def test_monroe_matches_original(home):
 def test_compare():
     name = "ersilia_reference_library_1M_v0"
     assert "clamp vs ecfp" in _run("compare", name, "-f", "ecfp", "-f", "clamp")
-    missing = CliRunner().invoke(cli, ["compare", name, "-f", "sand", "-f", "clamp"])
+    missing = CliRunner().invoke(cli, ["compare", name, "-f", "monroe", "-f", "clamp"])
     assert missing.exit_code != 0 and "Stored: clamp vs ecfp" in missing.output

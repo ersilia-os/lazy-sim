@@ -97,7 +97,8 @@ def index(input_csv, artifacts_dir, featurizers, embeddings=False, threads=None)
     artifacts_dir : str or Path
         Library name (a folder in ``~/lazysim/libraries``) or folder path.
     featurizers : str or list of str
-        Featurizers to index with: ``"clamp"`` and/or ``"ecfp"``.
+        Featurizers to index with, among ``"clamp"``, ``"ecfp"``, ``"sand"``,
+        ``"moljepa"`` and ``"monroe"``.
     embeddings : bool
         Also keep each featurizer's full embeddings, rows aligned with the library.
     threads : int, optional
@@ -151,7 +152,7 @@ def fetch(name, featurizers, artifacts_dir=None, embeddings=False):
     name : str
         Library name, as listed by ``lazysim catalog --remote``.
     featurizers : str or list of str
-        Featurizers to download: ``"clamp"`` and/or ``"ecfp"``.
+        Featurizers to download, among those the library was indexed with.
     artifacts_dir : str or Path, optional
         Destination name or path; ``~/lazysim/libraries/<name>`` by default.
         Fetching into a copy of the same library adds the missing featurizers.
