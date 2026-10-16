@@ -2,13 +2,15 @@
 
 How each lazy-sim featurizer represents molecules, where it comes from, how it was checked against the original code, how well it searches, and [how the featurizers relate](#how-the-featurizers-relate).
 
-| `-f` | Captures | Similarity, engine | Licence |
-|---|---|---|---|
-| `clamp` | Bioactivity-aware embedding (768 numbers) | Cosine, [turbovec](https://pypi.org/project/turbovec/) 4-bit (approximate) | GPL-3.0, plus the model terms |
-| `ecfp` | Substructures, ECFP6 (2,048 bits) | Tanimoto, [FPSim2](https://github.com/chembl/FPSim2) (exact) | No model |
-| `sand` | 3D shape (512 numbers) | Cosine, turbovec 4-bit (approximate) | Apache-2.0 |
-| `moljepa` | Biological, phenotypic and quantum context predicted from the graph (512 numbers) | Cosine, turbovec 4-bit (approximate) | **CC BY-NC 4.0, non-commercial use only** |
-| `monroe` | Structure and stereochemistry learned from quantum-chemical and bioassay data (720 numbers) | Cosine, turbovec 4-bit (approximate) | MIT |
+| `-f` | Captures | Similarity, engine | Licence | Ersilia Model Hub |
+|---|---|---|---|---|
+| `clamp` | Bioactivity-aware embedding (768 numbers) | Cosine, [turbovec](https://pypi.org/project/turbovec/) 4-bit (approximate) | GPL-3.0, plus the model terms | [eos3l5f](https://github.com/ersilia-os/eos3l5f) |
+| `ecfp` | Substructures, ECFP6 (2,048 bits) | Tanimoto, [FPSim2](https://github.com/chembl/FPSim2) (exact) | No model | [eos4wt0](https://github.com/ersilia-os/eos4wt0) |
+| `sand` | 3D shape (512 numbers) | Cosine, turbovec 4-bit (approximate) | Apache-2.0 | [eos5mnx](https://github.com/ersilia-os/eos5mnx) |
+| `moljepa` | Biological, phenotypic and quantum context predicted from the graph (512 numbers) | Cosine, turbovec 4-bit (approximate) | **CC BY-NC 4.0, non-commercial use only** | [eos9q2i](https://github.com/ersilia-os/eos9q2i) |
+| `monroe` | Structure and stereochemistry learned from quantum-chemical and bioassay data (720 numbers) | Cosine, turbovec 4-bit (approximate) | MIT | [eos8gop](https://github.com/ersilia-os/eos8gop) |
+
+SAND, Mol-JEPA and Monroe were checked against the code of their Hub models. CLAMP was checked against the original ml-jku code, not against eos3l5f. ECFP hasn't been compared with eos4wt0 yet.
 
 On the Ersilia Reference Library, measured as described in [How the numbers were measured](#how-the-numbers-were-measured):
 
@@ -56,6 +58,7 @@ python scripts/compare_featurizers.py ersilia_reference_library_1M_v0 -f clamp -
 - **Licence:**
   - The software is GPL-3.0.
   - The model terms say the model and its derivatives must not be used to exploit or harm, or to attempt to exploit or harm, in any way.
+- **On the Ersilia Model Hub:** [eos3l5f](https://github.com/ersilia-os/eos3l5f). lazy-sim's port was checked against the original code above, not against eos3l5f.
 
 ### What lazy-sim computes
 
@@ -127,6 +130,7 @@ The code is in [`src/lazy_sim/featurizers/clamp.py`](../src/lazy_sim/featurizers
 - **Fingerprint:** ECFP6, RDKit's Morgan fingerprint of radius 3 with 2,048 bits. It uses the RDKit generator's defaults: bits rather than counts, and no chirality.
 - **Similarity:** Tanimoto.
 - **Code:** [`src/lazy_sim/featurizers/ecfp.py`](../src/lazy_sim/featurizers/ecfp.py).
+- **On the Ersilia Model Hub:** [eos4wt0](https://github.com/ersilia-os/eos4wt0), Morgan fingerprints in binary form (radius 3, 2,048 bits). lazy-sim's fingerprints haven't been compared with it yet.
 
 ### Engine
 
