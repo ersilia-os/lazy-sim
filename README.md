@@ -28,7 +28,7 @@ This covers searching and indexing with every featurizer except `ecfp`, which ne
 - The hits CSV has one row per hit: `query_id`, `query_smiles`, `rank`, `hit_id`, `hit_smiles`, `similarity`. Invalid queries are skipped with a warning. Library rows that fail to parse are listed in the library's `skipped.csv`.
 - Libraries live in `~/lazysim/libraries/`. Set `LAZYSIM_HOME` to move it. `-a` takes a name there or a path.
 - `--embeddings` on `fetch` or `index` also keeps the full vectors, for your own analyses.
-- Model weights (CLAMP: 174 MB, SAND: 112 MB, Mol-JEPA: 182 MB, Monroe: 235 MB) are downloaded once, to `~/lazysim/models/`.
+- Model weights (CLAMP: 174 MB, SAND: 112 MB, Mol-JEPA: 182 MB) are downloaded once, to `~/lazysim/models/`.
 - lazy-sim is built for libraries of up to 10M compounds. Its indexes and search have only been tested on libraries of 1–10M compounds.
 
 In Python, `index`, `fetch` and `search` take the same arguments as the commands (see their docstrings):
@@ -47,7 +47,7 @@ lazy_sim.index("library.csv", "mylib", ["clamp", "ecfp"])
 
 | Library | Compounds | Status |
 |---|---|---|
-| `ersilia_reference_library_1M_v0` | 1.36M | `clamp`, `ecfp`, `sand` and `moljepa` available. `monroe` in progress |
+| `ersilia_reference_library_1M_v0` | 1.36M | `clamp`, `ecfp`, `sand` and `moljepa` |
 | `molport_5M_v0` | 5M | Work in progress |
 | `enamine_lsc_2M_v0` | 2M | Work in progress |
 | `enamine_real_sample_10M_v0` | 10M | Work in progress |
@@ -66,7 +66,6 @@ The featurizers are representation models of the [Ersilia Model Hub](https://git
 | `ecfp` | Tanimoto of ECFP6 (2,048 bits) | [FPSim2](https://github.com/chembl/FPSim2) (exact), needs `[ecfp]` |
 | `sand` | Cosine of [SAND](https://github.com/pfizer-opensource/SAND) embeddings, which track 3D shape overlap | turbovec, 4-bit (approximate) |
 | `moljepa` | Cosine of [Mol-JEPA](https://github.com/Boehringer-Ingelheim/mol-jepa) embeddings, which carry predicted biological and quantum context. **Non-commercial use only (CC BY-NC 4.0)** | turbovec, 4-bit (approximate) |
-| `monroe` | Cosine of [Monroe](https://github.com/blazejba/Monroe) embeddings, from a graph transformer with a 3D conformer | turbovec, 4-bit (approximate) |
 
 Scores can't be compared across featurizers. A random library molecule scores about 0.52 with CLAMP, 0.12 with Mol-JEPA, 0.09 with ECFP and 0.06 with SAND. `lazysim compare` shows how far two featurizers agree.
 
@@ -74,7 +73,7 @@ How each featurizer is computed, where its weights come from, how it was checked
 
 ## Performance
 
-On a 16-thread laptop, 1,000 queries against the Ersilia Reference Library (1.36M compounds) take about 7.5 s with CLAMP, 10 s with ECFP, 18 s with Mol-JEPA and 25 s with SAND, from launch to results. CLAMP, SAND and Mol-JEPA return 95–97% of the exact top 100. ECFP is exact. Monroe isn't indexed yet. Details and how to reproduce them are in [docs/featurizers.md](docs/featurizers.md).
+On a 16-thread laptop, 1,000 queries against the Ersilia Reference Library (1.36M compounds) take about 7.5 s with CLAMP, 10 s with ECFP, 18 s with Mol-JEPA and 25 s with SAND, from launch to results. CLAMP, SAND and Mol-JEPA return 95–97% of the exact top 100. ECFP is exact. Details and how to reproduce them are in [docs/featurizers.md](docs/featurizers.md).
 
 ## Maintainers
 

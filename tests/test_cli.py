@@ -1,8 +1,8 @@
 """Smoke tests for the lazysim CLI, plus parity with the original neural featurizers.
 
 The tests use a temporary lazy-sim home. The weights of the neural featurizers are
-downloaded into it once, unless ``LAZYSIM_<NAME>_WEIGHTS`` (CLAMP, SAND, MOLJEPA,
-MONROE) point to local copies. Everything else runs offline:
+downloaded into it once, unless ``LAZYSIM_<NAME>_WEIGHTS`` (CLAMP, SAND, MOLJEPA)
+point to local copies. Everything else runs offline:
 ``fetch`` reads a catalog of file:// URLs. The ECFP parts need the ``[ecfp]`` extra
 and are skipped without it.
 """
@@ -20,14 +20,14 @@ from click.testing import CliRunner
 from rdkit import Chem
 
 from lazy_sim.cli import cli
-from lazy_sim.featurizers import clamp, ecfp, moljepa, monroe, sand
+from lazy_sim.featurizers import clamp, ecfp, moljepa, sand
 from lazy_sim.io.remote import sha256
 from lazy_sim.io.tables import HITS_COLUMNS
 
 DATA = Path(__file__).parent / "data"
 K = 10
 HAS_FPSIM2 = importlib.util.find_spec("FPSim2") is not None
-DENSE = ["clamp", "moljepa", "monroe", "sand"]
+DENSE = ["clamp", "moljepa", "sand"]
 FEATURIZERS = sorted(DENSE + ["ecfp"]) if HAS_FPSIM2 else DENSE
 needs_fpsim2 = pytest.mark.skipif(not HAS_FPSIM2, reason="needs lazy-sim[ecfp]")
 
@@ -84,7 +84,7 @@ def test_index(library):
     )
     assert not (library / clamp.WEIGHTS_FILE).exists()
     assert sha256(clamp.ensure_weights()) == clamp.WEIGHTS_SHA256
-    for feat in (clamp, moljepa, monroe, sand):
+    for feat in (clamp, moljepa, sand):
         embeddings = np.load(library / f"{feat.NAME}_embeddings.npy")
         assert embeddings.shape == (200, feat.DIM)
         assert np.allclose(np.linalg.norm(embeddings, axis=1), 1, atol=1e-5)
@@ -267,17 +267,10 @@ def test_moljepa_matches_original(home):
     assert np.abs(embeddings - reference).max() < 1e-5
 
 
-def test_monroe_matches_original(home):
-    rows = _read(DATA / "reference_smiles.csv")
-    reference = np.load(DATA / "monroe_reference.npy")  # not normalised
-    reference /= np.linalg.norm(reference, axis=1, keepdims=True)
-    graphs = monroe.fingerprints([row["smiles"] for row in rows])
-    embeddings = monroe.encode(monroe.load_weights(), graphs)
-    assert np.abs(embeddings - reference).max() < 1e-5
-
-
 def test_compare():
     name = "ersilia_reference_library_1M_v0"
     assert "clamp vs ecfp" in _run("compare", name, "-f", "ecfp", "-f", "clamp")
-    missing = CliRunner().invoke(cli, ["compare", name, "-f", "monroe", "-f", "clamp"])
-    assert missing.exit_code != 0 and "Stored: clamp vs ecfp" in missing.output
+    unknown = CliRunner().invoke(cli, ["compare", "nope", "-f", "clamp", "-f", "ecfp"])
+    assert unknown.exit_code != 0 and f"Libraries: {name}" in unknown.output
+    same = CliRunner().invoke(cli, ["compare", name, "-f", "clamp", "-f", "clamp"])
+    assert same.exit_code != 0 and "Stored: clamp vs ecfp" in same.output

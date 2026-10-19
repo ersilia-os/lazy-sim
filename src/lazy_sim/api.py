@@ -97,8 +97,8 @@ def index(input_csv, artifacts_dir, featurizers, embeddings=False, threads=None)
     artifacts_dir : str or Path
         Library name (a folder in ``~/lazysim/libraries``) or folder path.
     featurizers : str or list of str
-        Featurizers to index with, among ``"clamp"``, ``"ecfp"``, ``"sand"``,
-        ``"moljepa"`` and ``"monroe"``.
+        Featurizers to index with, among ``"clamp"``, ``"ecfp"``, ``"sand"``
+        and ``"moljepa"``.
     embeddings : bool
         Also keep each featurizer's full embeddings, rows aligned with the library.
     threads : int, optional
@@ -279,8 +279,7 @@ def search(input_csv, artifacts_dir, output_csv, featurizer, k=100, threads=None
         hit_smiles, similarity``.
     featurizer : str
         Index to search: ``"ecfp"`` (exact Tanimoto of ECFP fingerprints), or
-        ``"clamp"``, ``"sand"``, ``"moljepa"`` or ``"monroe"`` (cosine of their
-        embeddings).
+        ``"clamp"``, ``"sand"`` or ``"moljepa"`` (cosine of their embeddings).
     k : int
         Hits per query.
     threads : int, optional

@@ -2,8 +2,8 @@
 
 1. Download the Ersilia Reference Library (pinned commit) and check its sha256.
 2. Use each molecule's InChIKey as its id; SMILES are kept exactly as given.
-3. Index it with lazy-sim (CLAMP, ECFP, SAND, Mol-JEPA and Monroe), keeping the
-   full embeddings.
+3. Index it with lazy-sim (CLAMP, ECFP, SAND and Mol-JEPA), keeping the full
+   embeddings.
 4. Lay the files out as on S3 under ``data/libraries/``, and write ``catalog.json``
    as the published one plus this library (so nobody else's entries are lost).
 
@@ -19,7 +19,6 @@ Usage
 LAZYSIM_CLAMP_WEIGHTS=data/clamp/clamp_compound_encoder_v1.npz \\
     LAZYSIM_SAND_WEIGHTS=data/sand/sand_encoder_v1.npz \\
     LAZYSIM_MOLJEPA_WEIGHTS=data/moljepa/moljepa_4c912b4.safetensors \\
-    LAZYSIM_MONROE_WEIGHTS=data/monroe/monroe_encoder_v1.npz \\
     python scripts/build_reference_library.py
 python scripts/build_reference_library.py --add moljepa -t 10
 
@@ -47,7 +46,7 @@ from lazy_sim.io.remote import catalog_url, sha256
 
 NAME = "ersilia_reference_library_1M_v0"
 VERSION, TITLE = "v0", "Ersilia Reference Library"
-FEATURIZERS = ["clamp", "ecfp", "sand", "moljepa", "monroe"]
+FEATURIZERS = ["clamp", "ecfp", "sand", "moljepa"]
 # Featurizers whose licence restricts how their index and embeddings may be used
 LICENSES = {"moljepa": "CC BY-NC 4.0 (Mol-JEPA weights), non-commercial use only"}
 COMMIT = "7b4f378351cb480db61018198a19356eb288a3f7"

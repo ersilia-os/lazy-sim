@@ -49,13 +49,13 @@ featurizers_option = click.option(
     required=True,
     type=click.Choice(AVAILABLE),
     help="clamp (cosine), ecfp (ECFP6, Tanimoto; needs lazy-sim[ecfp]), sand "
-    "(3D shape, cosine), moljepa (cosine; CC BY-NC, non-commercial use only) or "
-    "monroe (cosine). Repeatable.",
+    "(3D shape, cosine) or moljepa (cosine; CC BY-NC, non-commercial use only). "
+    "Repeatable.",
 )
 
 embeddings_option = click.option(
     "--embeddings",
     is_flag=True,
     help="Also keep the full embeddings (per molecule: CLAMP 3 KB, ECFP 256 B, "
-    "SAND and Mol-JEPA 2 KB, Monroe 2.9 KB).",
+    "SAND and Mol-JEPA 2 KB).",
 )

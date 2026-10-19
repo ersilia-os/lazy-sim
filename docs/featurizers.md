@@ -8,9 +8,8 @@ How each lazy-sim featurizer represents molecules, where it comes from, how it w
 | `ecfp` | Substructures, ECFP6 (2,048 bits) | Tanimoto, [FPSim2](https://github.com/chembl/FPSim2) (exact) | No model | [eos4wt0](https://github.com/ersilia-os/eos4wt0) |
 | `sand` | 3D shape (512 numbers) | Cosine, turbovec 4-bit (approximate) | Apache-2.0 | [eos5mnx](https://github.com/ersilia-os/eos5mnx) |
 | `moljepa` | Biological, phenotypic and quantum context predicted from the graph (512 numbers) | Cosine, turbovec 4-bit (approximate) | **CC BY-NC 4.0, non-commercial use only** | [eos9q2i](https://github.com/ersilia-os/eos9q2i) |
-| `monroe` | Structure and stereochemistry learned from quantum-chemical and bioassay data (720 numbers) | Cosine, turbovec 4-bit (approximate) | MIT | [eos8gop](https://github.com/ersilia-os/eos8gop) |
 
-SAND, Mol-JEPA and Monroe were checked against the code of their Hub models. CLAMP was checked against the original ml-jku code, not against eos3l5f. ECFP hasn't been compared with eos4wt0 yet.
+SAND and Mol-JEPA were checked against the code of their Hub models. CLAMP was checked against the original ml-jku code, not against eos3l5f. ECFP hasn't been compared with eos4wt0 yet.
 
 On the Ersilia Reference Library, measured as described in [How the numbers were measured](#how-the-numbers-were-measured):
 
@@ -20,7 +19,6 @@ On the Ersilia Reference Library, measured as described in [How the numbers were
 | [`ecfp`](#ecfp) | 1.000 | 10.1 s | 26.6 s | 245 MB | 347 MB | 0.09 |
 | [`sand`](#sand) | 0.966 | 24.7 s | 30.0 s | 353 MB | 2.78 GB | 0.06 |
 | [`moljepa`](#mol-jepa) | 0.963 | 18.0 s | 23.1 s | 353 MB | 2.78 GB | 0.12 |
-| [`monroe`](#monroe) | Not indexed yet | | | | | |
 
 The last column is the typical similarity of a random library molecule to a query. Scores are on different scales, so a score only means something next to its featurizer's own baseline.
 
@@ -337,94 +335,6 @@ On a 16-thread laptop:
 
 - **Where the time goes:** as with SAND, embedding the 1,000 queries takes most of it (about 15 s). The search itself takes a few seconds.
 
-## Monroe
-
-### Source
-
-- **Authors:** Banaszewski & Fitzgibbon.
-  - Preprint on [arXiv](https://doi.org/10.48550/arXiv.2608.18982) (2026).
-  - Code and weights at [blazejba/Monroe](https://github.com/blazejba/Monroe) (commit `57238ed`).
-- **Licence:**
-  - Monroe is MIT, Copyright (c) 2026 Blazej Banaszewski.
-  - Its attention layers are adapted from [GRIT](https://github.com/LiamMa/GRIT) (MIT, Copyright (c) 2023 Liheng Ma).
-  - Both notices are kept next to lazy-sim's copy of the weights.
-- **On the Ersilia Model Hub:** [eos8gop](https://github.com/ersilia-os/eos8gop). lazy-sim reproduces what eos8gop serves, including its fixed conformer seed.
-- **What it captures:**
-  - A graph transformer pretrained on 81 million PM6 quantum-chemistry calculations and 1,089 PubChem bioassays.
-  - Extra edges encode E/Z and R/S configuration, so stereoisomers get different inputs.
-  - The authors pair the embedding with a TabPFN head for few-shot property prediction. Only the encoder is used here.
-
-### What lazy-sim computes
-
-**Molecule.**
-- The SMILES is converted to an InChI and the molecule is rebuilt from it, as Monroe does. Then hydrogens are added and RDKit's legacy stereo perception is applied.
-- When the InChI round trip fails, lazy-sim builds the molecule from the SMILES instead, so every library row gets an embedding. eos8gop returns NaN for these molecules. This is the one deliberate difference.
-
-**Conformer.**
-- One RDKit ETKDGv3 conformer: seed 42, random starting coordinates, chirality enforced, up to 500 iterations.
-- It is optimised with MMFF94s for up to 200 iterations, or with UFF where MMFF94s has no parameters.
-- If both fail, lazy-sim uses 2D coordinates.
-- The 3D coordinates only enter as distances, between bonded or stereo-linked atoms and from each atom to the origin.
-
-**Graph.**
-- **Per atom:** 8 numbers (radical electrons, electronegativity, first ionisation energy, covalent radius, melting point, formal charge, van der Waals radius, mass) and 11 categories (implicit and total valence, hybridisation, element, H count, aromatic, in ring, CIP label, period, degree, group).
-- **Per bond:** 4 categories (conjugated, in ring, type, stereo).
-- **Extra edges:** E/Z edges around stereo double bonds, and R/S edges around four-coordinate stereocentres.
-- **Virtual node:** each molecule gets one, linked to every atom.
-
-**Network.** 10 GRIT layers, 720 wide with 10 heads, 58.7M parameters, run in numpy.
-- **Inputs:** RBF expansions of the atom numbers and edge distances, plus random-walk encodings over 16 steps of the bond graph.
-- **Each layer:** attention over each node's incoming edges with edge-dependent weights and biases, degree scaling, batch normalisation (fixed statistics) and a feed-forward block.
-- **Readout:** attention pooling with 10 heads over the atoms and the virtual node gives the 720 numbers.
-
-**Differences from the original.**
-- lazy-sim L2-normalises the output so cosine is a dot product.
-- It embeds molecules in batches, where the original embeds one at a time. The results are the same, because the batch normalisation uses fixed statistics.
-
-The code is in [`src/lazy_sim/featurizers/monroe.py`](../src/lazy_sim/featurizers/monroe.py), with the periodic-table values in `_monroe_elements.py`.
-
-### Weights
-
-**Original:** `checkpoint/weights.pt` from blazejba/Monroe (300,057,823 bytes, sha256 `df996e8e…`), which eos8gop stores with eosvc. Only the encoder is kept.
-
-**Conversion:** [`scripts/export_monroe_weights.py`](../scripts/export_monroe_weights.py), which needs torch and is for maintainers. With eos8gop's code, it also writes the reference embeddings for the tests.
-
-**The converted file:** `monroe_encoder_v1.npz`.
-- It holds 338 arrays under Monroe's own parameter names.
-- Size: 234,838,658 bytes.
-- sha256: `39fffb2a21f44d72be6c1ca3b37fd24ad0300e3a13c04d5b564d62a97d1a02ba`.
-
-**Hosting:** on Ersilia's public S3 at `lazy-sim/data/monroe/`, next to Monroe's `LICENSE` and `NOTICE`.
-
-**Download and checks:** the same as CLAMP. It is downloaded once to `~/lazysim/models/` (`LAZYSIM_MONROE_WEIGHTS` points to a local copy), and its sha256 is checked at every load and recorded in each library.
-
-### Checked against the original
-
-- **The reference:** 10,000 random Reference Library molecules, embedded with eos8gop's own code: torch 2.14, torch_geometric 2.8 and RDKit 2026.3.6, the version lazy-sim also uses.
-- **Result:**
-  - For all 9,999 molecules the original can embed, the graphs are identical, 3D conformer coordinates included.
-  - The embeddings agree within 2.1e-6 (median 7.5e-8).
-  - The remaining molecule fails eos8gop's InChI round trip, and lazy-sim embeds it from its SMILES.
-- **Kept as a test:** `tests/test_cli.py::test_monroe_matches_original`.
-  - It embeds 20 molecules and compares them with eos8gop's embeddings (`tests/data/monroe_reference.npy`).
-  - One of them, cisplatin, uses the 2D-coordinate fallback.
-  - The largest allowed difference is 1e-5.
-- **Reproducibility:** conformers depend on RDKit's version, so the embeddings match only with RDKit 2026.3.6. Another CPU architecture, such as ARM, may also give slightly different conformers.
-
-### Speed
-
-Monroe is the heaviest featurizer: 10 layers over about 4 edges per atom, each 720 wide, plus a 3D conformer per molecule. On a 16-thread laptop:
-
-| | Molecules per second |
-|---|---|
-| Network, lazy-sim (numpy, one process) | ~18–20 |
-| Conformers and graphs, lazy-sim (16 worker processes) | ~84 (about 0.2 s per molecule each) |
-| Original (eos8gop, one molecule at a time, 1 thread per process) | 3.4 per process |
-
-- **Where the network's time goes:** matrix products take about 58%, on all threads. The rest is per-edge numpy work on one thread.
-- **Queries:** conformers are slow, so Monroe builds query conformers in worker processes from 100 queries (`POOL_MIN_QUERIES`). The other featurizers wait for 5,000. 300 queries take about 37 s.
-- **Indexing:** the Ersilia Reference Library would take about a day.
-
 ## How the featurizers relate
 
 Two featurizers can both find good neighbours and still disagree on which molecules those are. To see how far they agree, Ersilia takes 1,000 molecules of a library as queries (the same ones as above), asks both featurizers for each query's top k, and compares the two lists.
@@ -435,7 +345,7 @@ The results come with lazy-sim, so the library need not be fetched:
 lazysim compare ersilia_reference_library_1M_v0 -f clamp -f ecfp
 ```
 
-For the Ersilia Reference Library, every pair of CLAMP, ECFP, SAND and Mol-JEPA is stored. Monroe's pairs will follow once it is indexed.
+For the Ersilia Reference Library, every pair of CLAMP, ECFP, SAND and Mol-JEPA is stored.
 
 ### How to read the table
 
@@ -509,7 +419,7 @@ The share of the top k that both featurizers return, for the typical query, from
 ### Adding a pair
 
 ```bash
-python scripts/compare_featurizers.py ersilia_reference_library_1M_v0 -f clamp -f monroe --save
+python scripts/compare_featurizers.py <library> -f <a> -f <b> --save
 ```
 
 - The library needs both featurizers' indexes and embeddings (`lazysim fetch NAME -f A -f B --embeddings`).

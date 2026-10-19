@@ -7,8 +7,8 @@ The library needs both featurizers' indexes and embeddings (``lazysim fetch NAME
 Each query gets two top-k lists, one per featurizer, in two ways:
 - indexed: the hits ``lazysim search`` returns (turbovec for the neural
   featurizers, FPSim2 for ECFP);
-- exact: the nearest molecules by every stored embedding (cosine for CLAMP, SAND,
-  Mol-JEPA and Monroe; Tanimoto for ECFP).
+- exact: the nearest molecules by every stored embedding (cosine for CLAMP, SAND
+  and Mol-JEPA, Tanimoto for ECFP).
 
 For each k, three measures per query, reported as the median and the interquartile
 range over the queries:

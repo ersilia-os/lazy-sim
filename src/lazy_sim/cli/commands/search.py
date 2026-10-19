@@ -38,7 +38,7 @@ def search_cmd():
         "--featurizer",
         required=True,
         type=click.Choice(AVAILABLE),
-        help="Index to search: clamp (cosine), ecfp (Tanimoto), sand, moljepa or monroe "
+        help="Index to search: clamp (cosine), ecfp (Tanimoto), sand or moljepa "
         "(cosine).",
     )
     @threads_option

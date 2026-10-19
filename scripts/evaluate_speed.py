@@ -8,10 +8,9 @@ Two searches run, each in a fresh process:
   process.
 - Embeddings (exact) does the same work, but compares each query with every stored
   embedding (cosine for the neural featurizers, Tanimoto for ECFP). Like ``lazysim
-  search``, it computes query fingerprints in worker processes from the
-  featurizer's ``POOL_MIN_QUERIES`` on (100 for Monroe, 5,000 for the others). It
-  runs only when the library has the featurizer's embeddings (``lazysim fetch NAME
-  -f FEATURIZER --embeddings``).
+  search``, it computes query fingerprints in worker processes from
+  ``POOL_MIN_QUERIES`` (5,000) queries on. It runs only when the library has the
+  featurizer's embeddings (``lazysim fetch NAME -f FEATURIZER --embeddings``).
 
 The total is measured from launching the process until it exits. Before each run,
 the model and library files are dropped from the system's file cache, so loading
@@ -95,8 +94,8 @@ def run_exact(featurizer, folder, queries_csv, hits_csv, k, threads, launched, o
         weights, fingerprint = feat.load_weights(), feat.fingerprints
     else:
         weights, fingerprint = None, feat.packed_fingerprints
-    enough = getattr(feat, "POOL_MIN_QUERIES", POOL_MIN_QUERIES)
-    with ChunkPool(fingerprint, threads if len(queries) >= enough else 1) as pool:
+    pooled = threads if len(queries) >= POOL_MIN_QUERIES else 1
+    with ChunkPool(fingerprint, pooled) as pool:
         embeddings_npy = folder / artifacts.embeddings_file(featurizer)
         embeddings = np.load(embeddings_npy, mmap_mode="r")  # read during the search
         spent[STAGES[1]] = time.perf_counter() - clock

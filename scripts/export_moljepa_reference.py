@@ -1,7 +1,7 @@
 """Maintainer script: embed a SMILES file with the original Mol-JEPA, for the tests.
 
 lazy-sim reads Mol-JEPA's weights directly from Hugging Face (``model.safetensors``,
-revision 4c912b4), so unlike CLAMP, SAND and Monroe there are no weights to export.
+revision 4c912b4), so unlike CLAMP and SAND there are no weights to export.
 This script writes the reference embeddings that the test suite compares lazy-sim
 against (``tests/data/moljepa_reference.npy``), with Mol-JEPA's own code.
 

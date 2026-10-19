@@ -10,7 +10,6 @@ ruff check . && ruff format .
 LAZYSIM_CLAMP_WEIGHTS=data/clamp/clamp_compound_encoder_v1.npz \
 LAZYSIM_SAND_WEIGHTS=data/sand/sand_encoder_v1.npz \
 LAZYSIM_MOLJEPA_WEIGHTS=data/moljepa/moljepa_4c912b4.safetensors \
-LAZYSIM_MONROE_WEIGHTS=data/monroe/monroe_encoder_v1.npz \
 pytest
 ```
 
@@ -24,7 +23,7 @@ pytest
 
 | Folder | Holds |
 |---|---|
-| `data/clamp/`, `data/sand/`, `data/monroe/` | Converted weights and the original licences |
+| `data/clamp/`, `data/sand/` | Converted weights and the original licences |
 | `data/moljepa/` | A local copy of Mol-JEPA's weights, not uploaded |
 | `data/libraries/` | The published libraries, one folder each, and `catalog.json` |
 | `data/logs/` | Build and evaluation logs, local only |
@@ -33,7 +32,7 @@ pytest
 
 ## Featurizer weights
 
-- `scripts/export_clamp_weights.py`, `export_sand_weights.py` and `export_monroe_weights.py` convert the original checkpoint to an npz file once. They need torch, which lazy-sim doesn't depend on.
+- `scripts/export_clamp_weights.py` and `export_sand_weights.py` convert the original checkpoint to an npz file once. They need torch, which lazy-sim doesn't depend on.
 - With the original code and a SMILES file, the same scripts also write the test reference embeddings. Each script's docstring lists the environment it needs.
 - Mol-JEPA's weights are read from Hugging Face at a pinned revision, so `export_moljepa_reference.py` writes only the reference embeddings.
 - Each featurizer module pins its weights' URL and sha256 (`WEIGHTS_URL`, `WEIGHTS_SHA256`). New weights need a new file name, new constants and a re-index of every library.
@@ -45,7 +44,7 @@ pytest
 
 ```bash
 python scripts/build_reference_library.py                   # full build, every featurizer
-python scripts/build_reference_library.py --add monroe -t 10  # add one featurizer
+python scripts/build_reference_library.py --add <featurizer> -t 10  # add one featurizer
 ```
 
 - **Names** follow the [Ersilia Maintained Inputs](https://github.com/ersilia-os/ersilia-model-hub-maintained-inputs): `<library>_<size>_v<N>`, such as `ersilia_reference_library_1M_v0`.
@@ -56,13 +55,13 @@ python scripts/build_reference_library.py --add monroe -t 10  # add one featuriz
   ```bash
   systemd-run --user --unit=lazysim-build -p MemoryMax=8G -p MemorySwapMax=0 \
     -p CPUQuota=1000% --nice=19 --working-directory=$PWD \
-    --setenv=LAZYSIM_MONROE_WEIGHTS=$PWD/data/monroe/monroe_encoder_v1.npz \
+    --setenv=LAZYSIM_SAND_WEIGHTS=$PWD/data/sand/sand_encoder_v1.npz \
     --setenv=OPENBLAS_NUM_THREADS=10 --setenv=OMP_NUM_THREADS=10 \
     --setenv=MKL_NUM_THREADS=10 --setenv=RAYON_NUM_THREADS=10 \
-    $(which python) scripts/build_reference_library.py --add monroe -t 10
+    $(which python) scripts/build_reference_library.py --add <featurizer> -t 10
   ```
 
-  On a 16-thread laptop, SAND took 6 h 21 min and Mol-JEPA 5 h 7 min. Monroe would take about a day.
+  On a 16-thread laptop, SAND took 6 h 21 min and Mol-JEPA 5 h 7 min.
 
 ## Evaluating
 
