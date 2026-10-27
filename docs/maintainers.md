@@ -40,14 +40,19 @@ pytest
 
 ## Building a library
 
-`scripts/build_reference_library.py` builds the Ersilia Reference Library. The script covers only that library today.
+`scripts/build_library.py` builds the libraries Ersilia maintains: the Ersilia Reference Library and the libraries of the [Ersilia Maintained Inputs](https://github.com/ersilia-os/ersilia-model-hub-maintained-inputs). `--list` shows them with their size.
 
 ```bash
-python scripts/build_reference_library.py                   # full build, every featurizer
-python scripts/build_reference_library.py --add <featurizer> -t 10  # add one featurizer
+python scripts/build_library.py --list
+python scripts/build_library.py <library> -t 10                      # every featurizer
+python scripts/build_library.py <library> -f ecfp                    # one featurizer
+python scripts/build_library.py <library> --add <featurizer> -t 10   # add one to a published library
 ```
 
-- **Names** follow the [Ersilia Maintained Inputs](https://github.com/ersilia-os/ersilia-model-hub-maintained-inputs): `<library>_<size>_v<N>`, such as `ersilia_reference_library_1M_v0`.
+- **Names** follow the Ersilia Maintained Inputs: `<library>_<size>_v<N>`, such as `ersilia_reference_library_1M_v0`.
+- **Sources.** The Reference Library is pinned to a commit and a sha256. The others are files in the public S3 bucket: the script checks their number of molecules, and prints their sha256 for you to pin in `LIBRARIES` after the first build. A repeated id or SMILES stops the build, since a library should have none.
+- **Resuming.** Each featurizer is built on its own, fastest first (ECFP, CLAMP, Mol-JEPA, SAND), and kept in `tmp/build/<library>/index`. After a stop, run the same command to build only the missing ones; an interrupted featurizer starts again from its beginning. The library is published once all four exist, and the seconds each one took are in `tmp/build/<library>/timings.json`.
+- **Embeddings** are kept by default, for users who `fetch` them, and take about 7 GB per million molecules over the four featurizers. A featurizer is indexed once, so `--no-embeddings` cannot be undone later.
 - **Published files are never edited.** A rebuild is published under the next version, such as `_v1`. `--add` is the one exception. It only adds the featurizer's files and catalog entry, so rows stay aligned for everyone who already fetched the library.
 - **Restrictive licences** go in the script's `LICENSES`. They are stored in the catalog, and `lazysim catalog --remote` prints them.
 - **Long builds** run detached, with memory and CPU caps. numpy is loaded before `-t` is read, so set the thread variables too. Follow progress with `journalctl --user -u lazysim-build -f`.
@@ -58,7 +63,7 @@ python scripts/build_reference_library.py --add <featurizer> -t 10  # add one fe
     --setenv=LAZYSIM_SAND_WEIGHTS=$PWD/data/sand/sand_encoder_v1.npz \
     --setenv=OPENBLAS_NUM_THREADS=10 --setenv=OMP_NUM_THREADS=10 \
     --setenv=MKL_NUM_THREADS=10 --setenv=RAYON_NUM_THREADS=10 \
-    $(which python) scripts/build_reference_library.py --add <featurizer> -t 10
+    $(which python) scripts/build_library.py <library> -t 10
   ```
 
   On a 16-thread laptop, SAND took 6 h 21 min and Mol-JEPA 5 h 7 min.
