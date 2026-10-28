@@ -43,16 +43,18 @@ lazy_sim.index("library.csv", "mylib", ["clamp", "ecfp"])
 
 ## Libraries
 
-`fetch` serves only libraries from the [Ersilia Maintained Inputs](https://github.com/ersilia-os/ersilia-model-hub-maintained-inputs), indexed by Ersilia with lazy-sim's featurizers. Only the Ersilia Reference Library is available so far, and only in part. The others are work in progress.
+`fetch` serves only libraries from the [Ersilia Maintained Inputs](https://github.com/ersilia-os/ersilia-model-hub-maintained-inputs), indexed by Ersilia with lazy-sim's featurizers. The Ersilia Reference Library, the Enamine Hit Locator Library and COCONUT are available so far. The others are work in progress.
 
 | Library | Compounds | Status |
 |---|---|---|
 | `ersilia_reference_library_1M_v0` | 1.36M | `clamp`, `ecfp`, `sand` and `moljepa` |
-| `molport_5M_v0` | 5M | Work in progress |
+| `enamine_hll_460K_v0` | 460K | `clamp`, `ecfp`, `sand` and `moljepa` |
+| `coconut_715K_v0` | 715,818 | `clamp`, `ecfp`, `sand` and `moljepa` |
 | `enamine_lsc_2M_v0` | 2M | Work in progress |
+| `molport_5M_v0` | 5M | Work in progress |
 | `enamine_real_sample_10M_v0` | 10M | Work in progress |
-| `coconut_715K_v0` | 715K | Work in progress |
-| `enamine_hll_460K_v0` | 460K | Work in progress |
+
+RDKit could not parse 4 of the 715,822 molecules in COCONUT's source, so they are not indexed. They are listed in the library's `skipped.csv`.
 
 The featurizers are representation models of the [Ersilia Model Hub](https://github.com/ersilia-os/ersilia), re-implemented in lazy-sim. Optimisations here and different dependency versions (RDKit in particular) can make their representations differ slightly from the Hub's. The checks are in [docs/featurizers.md](docs/featurizers.md).
 

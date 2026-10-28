@@ -22,6 +22,17 @@ On the Ersilia Reference Library, measured as described in [How the numbers were
 
 The last column is the typical similarity of a random library molecule to a query. Scores are on different scales, so a score only means something next to its featurizer's own baseline.
 
+Recall@100 on the other libraries, measured the same way (sizes and times are in each featurizer's section):
+
+| `-f` | Reference Library (1,355,109) | Enamine Hit Locator (460,160) | COCONUT (715,818) |
+|---|---|---|---|
+| `clamp` | 0.952 | 0.952 | 0.916 |
+| `ecfp` | 1.000 | 1.000 | 1.000 |
+| `sand` | 0.966 | 0.972 | 0.935 |
+| `moljepa` | 0.963 | 0.970 | 0.902 |
+
+COCONUT is the hardest library for the 4-bit indexes. Its recall@10 is 0.876 for CLAMP, 0.924 for SAND and 0.852 for Mol-JEPA, and it rises with k. Why hasn't been investigated. ECFP is exact on every library.
+
 Principles shared by all featurizers:
 - **SMILES are used exactly as given.** lazy-sim never standardises or strips salts. Curation happens upstream.
 - **No torch.** Everything runs on RDKit and numpy, plus FPSim2 for ECFP. Neural featurizers are re-implemented in numpy and checked against their original code. Their weights are downloaded once to `~/lazysim/models/`: converted and hosted by Ersilia, except Mol-JEPA's, which are read as released on Hugging Face.
@@ -29,8 +40,8 @@ Principles shared by all featurizers:
 
 ## How the numbers were measured
 
-- **Library and queries:** the Ersilia Reference Library (1,355,109 compounds), with 1,000 of its own molecules drawn at random (seed 0) as queries. Each query's own hit is left out.
-- **Machine:** a 16-thread laptop.
+- **Library and queries:** the Ersilia Reference Library (1,355,109 compounds), with 1,000 of its own molecules drawn at random (seed 0) as queries. Each query's own hit is left out. The Enamine Hit Locator Library (460,160) and COCONUT (715,818) were measured the same way.
+- **Machine:** a 16-thread laptop for the Reference Library, and a 16-thread Intel Core i5-1340P for the Enamine Hit Locator Library and COCONUT, so times are not strictly comparable between the two.
 - **Recall:** [`scripts/evaluate_recall.py`](../scripts/evaluate_recall.py). Recall@k is the share of the indexed top k that are true top-k neighbours, where a hit counts when its exact similarity reaches that of the true k-th neighbour.
 - **Time:** [`scripts/evaluate_speed.py`](../scripts/evaluate_speed.py).
   - **Indexed** is the real `lazysim search` command, from launch to exit, for 100 hits per query.
@@ -109,14 +120,14 @@ The code is in [`src/lazy_sim/featurizers/clamp.py`](../src/lazy_sim/featurizers
 
 ### Search quality and speed
 
-| | Ersilia Reference Library |
-|---|---|
-| Index (turbovec, 4-bit) | 527 MB (389 B per molecule) |
-| Embeddings (float32) | 4.16 GB (3 KB per molecule) |
-| Recall@10 / @100 / @1000 | 0.955 / 0.952 / 0.953 |
-| Score error (mean) | 0.0018 |
-| Time indexed | 7.5 s |
-| Time embeddings | 15.2 s |
+| | Ersilia Reference Library | Enamine Hit Locator | COCONUT |
+|---|---|---|---|
+| Index (turbovec, 4-bit) | 527 MB (389 B per molecule) | 179 MB | 279 MB |
+| Embeddings (float32) | 4.16 GB (3 KB per molecule) | 1.41 GB | 2.20 GB |
+| Recall@10 / @100 / @1000 | 0.955 / 0.952 / 0.953 | 0.950 / 0.952 / 0.954 | 0.876 / 0.916 / 0.946 |
+| Score error (mean) | 0.0018 | 0.0015 | 0.0015 |
+| Time indexed | 7.5 s | 3.4 s | 4.7 s |
+| Time embeddings | 15.2 s | 5.9 s | 8.1 s |
 
 - **ChEMBL 37:** on 2.9M compounds, with 1,000 queries held out of the library, recall@100 was 0.958.
 - **Scores are compressed:** random pairs score about 0.5 and close analogues above 0.9. CLAMP was trained on bioactivity data, so its cosine is not a Tanimoto coefficient.
@@ -146,14 +157,14 @@ The code is in [`src/lazy_sim/featurizers/clamp.py`](../src/lazy_sim/featurizers
 
 ### Search quality and speed
 
-| | Ersilia Reference Library |
-|---|---|
-| Index (`ecfp.h5`) | 245 MB |
-| Embeddings (packed bits) | 347 MB (256 B per molecule) |
-| Recall@10 / @100 / @1000 | 1.000 / 1.000 / 1.000 |
-| Score error (mean) | 0.0000 |
-| Time indexed | 10.1 s |
-| Time embeddings | 26.6 s |
+| | Ersilia Reference Library | Enamine Hit Locator | COCONUT |
+|---|---|---|---|
+| Index (`ecfp.h5`) | 245 MB | 81 MB | 120 MB |
+| Embeddings (packed bits) | 347 MB (256 B per molecule) | 118 MB | 183 MB |
+| Recall@10 / @100 / @1000 | 1.000 / 1.000 / 1.000 | 1.000 / 1.000 / 1.000 | 1.000 / 1.000 / 1.000 |
+| Score error (mean) | 0.0000 | 0.0000 | 0.0000 |
+| Time indexed | 10.1 s | 3.3 s | 4.6 s |
+| Time embeddings | 26.6 s | 8.4 s | 13.3 s |
 
 ## SAND
 
@@ -229,18 +240,18 @@ SAND does about 50× more work per molecule than CLAMP. On a 16-thread laptop:
   - Otherwise they spin for about 0.1 s and slow the single-core numpy steps in between.
   - It makes SAND about 20% faster (48 → 59 molecules per second) and CLAMP indexing about 6% faster, and doesn't change CLAMP search.
 - **Queries:** embedding 1,000 queries takes about 17–20 s.
-- **Indexing:** the Ersilia Reference Library took 6 h 21 min (about 59 molecules per second, 3.4 GB of memory at peak). That is paid once, by Ersilia, for the libraries `fetch` serves.
+- **Indexing:** the Ersilia Reference Library took 6 h 21 min (about 59 molecules per second, 3.4 GB of memory at peak). That is paid once, by Ersilia, for the libraries `fetch` serves. On 14 threads, the Enamine Hit Locator Library took 1 h 49 min (about 70 molecules per second) and COCONUT, whose molecules are larger, 4 h 19 min (about 46 per second).
 
 ### Search quality and speed
 
-| | Ersilia Reference Library |
-|---|---|
-| Index (turbovec, 4-bit) | 353 MB (260 B per molecule) |
-| Embeddings (float32) | 2.78 GB (2 KB per molecule) |
-| Recall@10 / @100 / @1000 | 0.967 / 0.966 / 0.959 |
-| Score error (mean) | 0.0033 |
-| Time indexed | 24.7 s |
-| Time embeddings | 30.0 s |
+| | Ersilia Reference Library | Enamine Hit Locator | COCONUT |
+|---|---|---|---|
+| Index (turbovec, 4-bit) | 353 MB (260 B per molecule) | 120 MB | 187 MB |
+| Embeddings (float32) | 2.78 GB (2 KB per molecule) | 942 MB | 1.47 GB |
+| Recall@10 / @100 / @1000 | 0.967 / 0.966 / 0.959 | 0.970 / 0.972 / 0.969 | 0.924 / 0.935 / 0.952 |
+| Score error (mean) | 0.0033 | 0.0032 | 0.0029 |
+| Time indexed | 24.7 s | 16.4 s | 25.1 s |
+| Time embeddings | 30.0 s | 18.1 s | 27.9 s |
 
 - **Where the time goes:** embedding the 1,000 queries takes about 20 s, so SAND's indexed search is only a little faster than going through every embedding. The search itself takes a few seconds.
 
@@ -320,18 +331,18 @@ On a 16-thread laptop:
   - The value and bond projections are applied once per atom, after summing over its bonds.
 - **Graphs are large:** with hydrogens as atoms, a Reference Library molecule averages 54 atoms.
 - **Queries:** embedding 1,000 queries takes about 15 s.
-- **Indexing:** the Ersilia Reference Library took 5 h 7 min (about 74 molecules per second, 3.8 GB of memory at peak), on 10 of the 16 threads.
+- **Indexing:** the Ersilia Reference Library took 5 h 7 min (about 74 molecules per second, 3.8 GB of memory at peak), on 10 of the 16 threads. On 14 threads, the Enamine Hit Locator Library took 1 h 27 min (about 88 molecules per second) and COCONUT 3 h 43 min (about 54 per second).
 
 ### Search quality and speed
 
-| | Ersilia Reference Library |
-|---|---|
-| Index (turbovec, 4-bit) | 353 MB (260 B per molecule) |
-| Embeddings (float32) | 2.78 GB (2 KB per molecule) |
-| Recall@10 / @100 / @1000 | 0.957 / 0.963 / 0.969 |
-| Score error (mean) | 0.0027 |
-| Time indexed | 18.0 s |
-| Time embeddings | 23.1 s |
+| | Ersilia Reference Library | Enamine Hit Locator | COCONUT |
+|---|---|---|---|
+| Index (turbovec, 4-bit) | 353 MB (260 B per molecule) | 120 MB | 187 MB |
+| Embeddings (float32) | 2.78 GB (2 KB per molecule) | 942 MB | 1.47 GB |
+| Recall@10 / @100 / @1000 | 0.957 / 0.963 / 0.969 | 0.966 / 0.970 / 0.974 | 0.852 / 0.902 / 0.934 |
+| Score error (mean) | 0.0027 | 0.0029 | 0.0021 |
+| Time indexed | 18.0 s | 13.5 s | 21.6 s |
+| Time embeddings | 23.1 s | 15.4 s | 24.4 s |
 
 - **Where the time goes:** as with SAND, embedding the 1,000 queries takes most of it (about 15 s). The search itself takes a few seconds.
 
