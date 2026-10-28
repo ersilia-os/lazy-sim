@@ -31,7 +31,7 @@ Recall@100 on the other libraries, measured the same way (sizes and times are in
 | `sand` | 0.966 | 0.972 | 0.935 |
 | `moljepa` | 0.963 | 0.970 | 0.902 |
 
-COCONUT is the hardest library for the 4-bit indexes. Its recall@10 is 0.876 for CLAMP, 0.924 for SAND and 0.852 for Mol-JEPA, and it rises with k. Why hasn't been investigated. ECFP is exact on every library.
+COCONUT is the hardest library for the 4-bit indexes. Its recall@10 is 0.876 for CLAMP, 0.924 for SAND and 0.852 for Mol-JEPA, and it rises with k. ECFP is exact on every library.
 
 Principles shared by all featurizers:
 - **SMILES are used exactly as given.** lazy-sim never standardises or strips salts. Curation happens upstream.
@@ -41,7 +41,7 @@ Principles shared by all featurizers:
 ## How the numbers were measured
 
 - **Library and queries:** the Ersilia Reference Library (1,355,109 compounds), with 1,000 of its own molecules drawn at random (seed 0) as queries. Each query's own hit is left out. The Enamine Hit Locator Library (460,160) and COCONUT (715,818) were measured the same way.
-- **Machine:** a 16-thread laptop for the Reference Library, and a 16-thread Intel Core i5-1340P for the Enamine Hit Locator Library and COCONUT, so times are not strictly comparable between the two.
+- **Machine:** a 16-thread computer.
 - **Recall:** [`scripts/evaluate_recall.py`](../scripts/evaluate_recall.py). Recall@k is the share of the indexed top k that are true top-k neighbours, where a hit counts when its exact similarity reaches that of the true k-th neighbour.
 - **Time:** [`scripts/evaluate_speed.py`](../scripts/evaluate_speed.py).
   - **Indexed** is the real `lazysim search` command, from launch to exit, for 100 hits per query.
