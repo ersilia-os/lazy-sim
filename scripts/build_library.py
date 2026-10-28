@@ -50,6 +50,7 @@ from array import array
 from collections import Counter
 from pathlib import Path
 
+import numpy as np
 from rdkit import Chem, rdBase
 
 import lazy_sim
@@ -70,8 +71,12 @@ _MAINTAINED = (
 )
 
 
-def _maintained(folder, title, molecules, sha256=None):
-    """Describe a library of ``data/processed`` in the Ersilia Maintained Inputs."""
+def _maintained(folder, title, molecules, sha256=None, duplicates=0):
+    """Describe a library of ``data/processed`` in the Ersilia Maintained Inputs.
+
+    `molecules` is the number of rows of the source. `duplicates` is the number of rows
+    to drop because they repeat the SMILES of an earlier row (0 stops the build at any).
+    """
     return {
         "title": title,
         "version": "v0",
@@ -80,6 +85,7 @@ def _maintained(folder, title, molecules, sha256=None):
         "sha256": sha256,  # None until the first build prints it
         "smiles": "smiles",
         "id": "collection_id",
+        "duplicates": duplicates,
     }
 
 
@@ -116,8 +122,14 @@ LIBRARIES = {
         2_492_445,
         "cf0e23935e38f2ebe6c7869a6e5664b825f1ceb6fbd8e3cda3b602f371da0777",
     ),
+    # 9,087 rows repeat an earlier row (same id, same SMILES) and 210 SMILES carry two
+    # ids; the first row of each SMILES is kept, so 5,313,566 molecules are indexed
     "molport_5M_v0": _maintained(
-        "molport_screening_compounds_5m_v0", "Molport Screening Compounds", 5_322_863
+        "molport_screening_compounds_5m_v0",
+        "Molport Screening Compounds",
+        5_322_863,
+        "a6ec06fbfa4d73e32aaf448a4f89d97bc07382fb32ab7b634e03b232675a710c",
+        duplicates=9_297,
     ),
     "enamine_real_sample_10M_v0": _maintained(
         "enamine_real_sample_10m_v0",
@@ -179,48 +191,79 @@ def _write_with_inchikeys(raw, smiles_column, library_csv):
     return len(smiles)
 
 
-def _repeated(hashes):
-    """Return the values that occur more than once among `hashes`."""
-    ordered = sorted(hashes)
-    return {a for a, b in zip(ordered, ordered[1:]) if a == b}
+def _repeats(ids, smiles):
+    """Return the rows that repeat the SMILES of an earlier row, and that earlier row.
+
+    `ids` and `smiles` are the 64-bit hashes of each row's values. Keeping the first
+    row of each SMILES leaves every id once, unless an id carries two different
+    SMILES; that is a conflict in the source, not a repeat, and raises.
+    """
+    ids, smiles = np.frombuffer(ids, np.int64), np.frombuffer(smiles, np.int64)
+    pairs = ids * np.int64(1_000_003) + smiles  # wraps around on purpose
+    if len(np.unique(pairs)) != len(np.unique(ids)):
+        raise ValueError("an id carries two different SMILES")
+    _, first, inverse = np.unique(smiles, return_index=True, return_inverse=True)
+    earlier = first[inverse.reshape(-1)]
+    rows = np.flatnonzero(earlier != np.arange(len(smiles)))
+    return rows, earlier[rows]
 
 
-def _examples(raw, column, hashes, n=3):
-    """Return up to `n` values of `column` in `raw` whose hash is in `hashes`."""
-    found = []
+def _rows_at(raw, wanted, smiles_column, id_column):
+    """Return ``{row: (id, smiles)}`` for the (0-based) rows in `wanted`."""
+    found = {}
     with open(raw, newline="") as fh:
-        for row in csv.DictReader(fh):
-            if hash(row[column]) in hashes:
-                found.append(row[column])
-                if len(found) == n:
-                    break
+        for n, row in enumerate(csv.DictReader(fh)):
+            if n in wanted:
+                found[n] = (row[id_column] or f"row-{n + 1}", row[smiles_column])
     return found
 
 
-def _write_with_ids(raw, smiles_column, id_column, library_csv):
+def _write_with_ids(raw, smiles_column, id_column, library_csv, duplicates=0):
+    """Write the ``id`` and ``smiles`` columns, without the repeats of an earlier SMILES.
+
+    The rows dropped are listed in ``duplicates.csv`` next to the library. There must
+    be exactly `duplicates` of them, so a library that should have none stops the
+    build at its first. Returns the number of rows of `raw`.
+    """
     # Streamed, because the largest library has more than ten million rows. Repeats
     # are looked for by 64-bit hash, which keeps the memory use low.
     ids, smiles = array("q"), array("q")
-    n = blank = 0
+    blank = 0
+    with open(raw, newline="") as src:
+        for n, row in enumerate(csv.DictReader(src), start=1):
+            blank += not row[id_column]
+            ids.append(hash(row[id_column] or f"row-{n}"))
+            smiles.append(hash(row[smiles_column]))
+    print(f"{len(ids)} molecules, {blank} without an id")
+    dropped, kept = _repeats(ids, smiles)
+    dropped, kept = dropped.tolist(), kept.tolist()
+    skip = set(dropped)
+    found = _rows_at(raw, skip | set(kept), smiles_column, id_column) if skip else {}
+    if len(skip) != duplicates:
+        some = [(r + 1, *found[r]) for r in dropped[:3]]
+        raise ValueError(
+            f"{raw} has {len(skip)} rows that repeat an earlier SMILES, not "
+            f"{duplicates}" + (f", such as {some}" if some else "")
+        )
+    if skip:
+        log = library_csv.with_name("duplicates.csv")
+        with open(log, "w", newline="") as fh:
+            writer = csv.writer(fh)
+            writer.writerow(["row", "id", "smiles", "kept_row", "kept_id"])
+            for r, k in zip(dropped, kept):
+                writer.writerow([r + 1, *found[r], k + 1, found[k][0]])
+        same_id = sum(found[r][0] == found[k][0] for r, k in zip(dropped, kept))
+        print(
+            f"{len(skip)} rows dropped for repeating an earlier SMILES "
+            f"({same_id} with the same id), listed in {log}"
+        )
     with open(raw, newline="") as src, open(library_csv, "w", newline="") as dst:
         writer = csv.writer(dst)
         writer.writerow(["id", "smiles"])
-        for row in csv.DictReader(src):
-            n += 1
-            blank += not row[id_column]
-            mol_id = row[id_column] or f"row-{n}"
-            ids.append(hash(mol_id))
-            smiles.append(hash(row[smiles_column]))
-            writer.writerow([mol_id, row[smiles_column]])
-    print(f"{n} molecules, {blank} without an id")
-    for column, hashes in ((id_column, ids), (smiles_column, smiles)):
-        repeated = _repeated(hashes)
-        if repeated:
-            raise ValueError(
-                f"{raw} has {len(repeated)} repeated values in {column!r}, "
-                f"such as {_examples(raw, column, repeated)}"
-            )
-    return n
+        for n, row in enumerate(csv.DictReader(src)):
+            if n not in skip:
+                writer.writerow([row[id_column] or f"row-{n + 1}", row[smiles_column]])
+    return len(ids)
 
 
 def prepare_input(name):
@@ -231,7 +274,9 @@ def prepare_input(name):
     if lib["id"] is None:
         n = _write_with_inchikeys(raw, lib["smiles"], library_csv)
     else:
-        n = _write_with_ids(raw, lib["smiles"], lib["id"], library_csv)
+        n = _write_with_ids(
+            raw, lib["smiles"], lib["id"], library_csv, lib["duplicates"]
+        )
     assert n == lib["molecules"], f"{name} has {n} molecules, not {lib['molecules']}"
     return library_csv
 
@@ -339,6 +384,8 @@ def publish(name, built):
         "title": lib["title"],
         "url": lib["source"],
     }
+    if lib.get("duplicates"):  # the build checked that this many rows were dropped
+        manifest["source"]["duplicates_dropped"] = lib["duplicates"]
     (built / "manifest.json").write_text(json.dumps(manifest, indent=2))
     out.mkdir(parents=True, exist_ok=True)
     for path in built.iterdir():
