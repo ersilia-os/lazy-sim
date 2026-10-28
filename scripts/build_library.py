@@ -30,6 +30,15 @@ python scripts/build_library.py enamine_hll_460K_v0 -t 14
 python scripts/build_library.py enamine_hll_460K_v0 -f ecfp
 python scripts/build_library.py ersilia_reference_library_1M_v0 --add moljepa -t 10
 
+To build the featurizers at the same time, for example as separate cluster jobs,
+build the first one alone, since it creates the library; then run the others with
+``--no-publish``, which never publishes; then run the plain command to publish:
+python scripts/build_library.py enamine_lsc_2M_v0 -f ecfp
+python scripts/build_library.py enamine_lsc_2M_v0 -f clamp --no-publish
+python scripts/build_library.py enamine_lsc_2M_v0 -f moljepa --no-publish
+python scripts/build_library.py enamine_lsc_2M_v0 -f sand --no-publish
+python scripts/build_library.py enamine_lsc_2M_v0
+
 The weights are read from ``LAZYSIM_<NAME>_WEIGHTS`` (CLAMP, SAND and MOLJEPA) when
 set, and downloaded to ``~/lazysim/models`` otherwise. ``-t`` caps worker processes
 and threads (all CPUs by default); numpy is already loaded when the script reads it, so
@@ -403,8 +412,13 @@ def record_time(name, featurizer, seconds):
     print(f"{featurizer} took {seconds / 3600:.2f} h")
 
 
-def build(name, featurizers, embeddings=True, threads=None):
-    """Index a library one featurizer at a time, then publish it once all are built."""
+def build(name, featurizers, embeddings=True, threads=None, publish_when_built=True):
+    """Index a library one featurizer at a time, then publish it once all are built.
+
+    With `publish_when_built` False, the library is never published here, so several
+    runs can build different featurizers of it at the same time; a final run with the
+    default publishes it.
+    """
     check_unpublished(name)
     built = BUILD / name / "index"
     if built.exists() and not (built / artifacts.MANIFEST).exists():
@@ -427,8 +441,10 @@ def build(name, featurizers, embeddings=True, threads=None):
     missing = [f for f in FEATURIZERS if f not in artifacts.featurizers_in(built)]
     if missing:
         print(f"Still to build: {', '.join(missing)}. Run again to continue.")
-    else:
+    elif publish_when_built:
         publish(name, built)
+    else:
+        print("All featurizers are built. Run again without --no-publish to publish.")
 
 
 def add(name, names, embeddings=True, threads=None):
@@ -477,6 +493,13 @@ if __name__ == "__main__":
         default=True,
         help="Keep the full embeddings, for users who fetch them (the default).",
     )
+    parser.add_argument(
+        "--publish",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Publish the library once all four featurizers are built (the default). "
+        "--no-publish only builds, so featurizers can be built in parallel.",
+    )
     parser.add_argument("-t", "--threads", type=int)
     args = parser.parse_args()
     if args.list:
@@ -488,5 +511,9 @@ if __name__ == "__main__":
         add(args.library, args.add, args.embeddings, args.threads)
     else:
         build(
-            args.library, args.featurizer or FEATURIZERS, args.embeddings, args.threads
+            args.library,
+            args.featurizer or FEATURIZERS,
+            args.embeddings,
+            args.threads,
+            args.publish,
         )
