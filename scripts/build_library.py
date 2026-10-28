@@ -9,7 +9,8 @@
    keeping the full embeddings so users can fetch them (``--no-embeddings`` skips
    them, which cannot be undone later: a featurizer is indexed once).
 4. Lay the files out as on S3 under ``data/libraries/``, and write ``catalog.json``
-   as the published one plus this library (so nobody else's entries are lost).
+   as the published one plus the libraries built here and not uploaded yet (so nobody
+   else's entries are lost, and building one library never drops another).
 
 Every finished featurizer stays in ``tmp/build/<library>/index``, so a run that stops
 (a crash, a killed job) resumes with the featurizers still missing instead of from
@@ -102,15 +103,27 @@ LIBRARIES = {
         460_160,
         "63849870ef48c7316070c0b38dc6af0a4fff4106a5c5a703f3ac07148067e8c2",
     ),
-    "coconut_715K_v0": _maintained("coconut_715k_v0", "COCONUT", 715_822),
+    # 4 of the 715,822 rows are not valid SMILES; the catalog counts the 715,818 indexed
+    "coconut_715K_v0": _maintained(
+        "coconut_715k_v0",
+        "COCONUT",
+        715_822,
+        "15f7d7e153d4d1802eac6ee3e2694e78e5b53dac360cb14e19eb51a2c3a19644",
+    ),
     "enamine_lsc_2M_v0": _maintained(
-        "enamine_liquid_stock_2m_v0", "Enamine Liquid Stock Collection", 2_492_445
+        "enamine_liquid_stock_2m_v0",
+        "Enamine Liquid Stock Collection",
+        2_492_445,
+        "cf0e23935e38f2ebe6c7869a6e5664b825f1ceb6fbd8e3cda3b602f371da0777",
     ),
     "molport_5M_v0": _maintained(
         "molport_screening_compounds_5m_v0", "Molport Screening Compounds", 5_322_863
     ),
     "enamine_real_sample_10M_v0": _maintained(
-        "enamine_real_sample_10m_v0", "Enamine REAL Sample", 10_353_526
+        "enamine_real_sample_10m_v0",
+        "Enamine REAL Sample",
+        10_353_526,
+        "8f6031f8e4171c45b41d73aca2d6c63fb35dff2a83ffd9e86ae81fdba28dc895",
     ),
 }
 BUILD = Path("tmp/build")
@@ -245,6 +258,31 @@ def published_catalog():
         raise
 
 
+def current_catalog():
+    """Return the catalog.json on S3 plus the libraries built here but not uploaded.
+
+    Starting from S3 alone would drop a library that is built but not uploaded yet as
+    soon as the next one is published. S3 wins for what it lists; from the local
+    catalog come the libraries it lacks and the featurizers it lacks.
+    """
+    catalog = published_catalog()
+    local = OUTPUT / "catalog.json"
+    if local.exists():
+        for name, entry in json.loads(local.read_text())["libraries"].items():
+            if not (OUTPUT / name).is_dir():
+                continue  # the library was deleted here, so its entry is stale
+            kept = catalog["libraries"].setdefault(name, entry)
+            for f, featurizer in entry["featurizers"].items():
+                kept["featurizers"].setdefault(f, featurizer)
+    return catalog
+
+
+def write_catalog(catalog):
+    path = OUTPUT / "catalog.json"
+    path.write_text(json.dumps(catalog, indent=2))
+    return path
+
+
 def featurizer_entry(out, name):
     """Describe a featurizer of the library in `out` for ``catalog.json``."""
     fm = json.loads((out / f"{name}.json").read_text())
@@ -271,6 +309,24 @@ def check_unpublished(name):
         raise FileExistsError(f"{out} is not empty: published libraries are not edited")
 
 
+def library_entry(name, out):
+    """Describe the library in `out`, with the featurizers in it, for ``catalog.json``."""
+    lib = LIBRARIES[name]
+    manifest = json.loads((out / artifacts.MANIFEST).read_text())
+    built = artifacts.featurizers_in(out)
+    return {
+        "title": lib["title"],
+        "version": lib["version"],
+        "molecules": manifest["library"]["indexed"],
+        "source": lib["source"],
+        "license": LICENSE,
+        "files": describe(
+            *(out / n for n in ("library.db", "skipped.csv", "manifest.json"))
+        ),
+        "featurizers": {f: featurizer_entry(out, f) for f in FEATURIZERS if f in built},
+    }
+
+
 def publish(name, built):
     """Move a built library into the S3 layout and record it in catalog.json."""
     lib = LIBRARIES[name]
@@ -287,22 +343,9 @@ def publish(name, built):
     out.mkdir(parents=True, exist_ok=True)
     for path in built.iterdir():
         shutil.move(path, out / path.name)
-    featurizers = {f: featurizer_entry(out, f) for f in FEATURIZERS}
-    catalog = published_catalog()
-    catalog["libraries"][name] = {
-        "title": lib["title"],
-        "version": lib["version"],
-        "molecules": manifest["library"]["indexed"],
-        "source": lib["source"],
-        "license": LICENSE,
-        "files": describe(
-            *(out / n for n in ("library.db", "skipped.csv", "manifest.json"))
-        ),
-        "featurizers": featurizers,
-    }
-    catalog_path = OUTPUT / "catalog.json"
-    catalog_path.write_text(json.dumps(catalog, indent=2))
-    print(f"Wrote {out} and {catalog_path}")
+    catalog = current_catalog()
+    catalog["libraries"][name] = library_entry(name, out)
+    print(f"Wrote {out} and {write_catalog(catalog)}")
 
 
 def record_time(name, featurizer, seconds):
@@ -344,7 +387,7 @@ def build(name, featurizers, embeddings=True, threads=None):
 def add(name, names, embeddings=True, threads=None):
     """Index the published library with more featurizers and list them in the catalog."""
     out = OUTPUT / name
-    catalog = published_catalog()
+    catalog = current_catalog()
     published = remote.read_catalog()[name]
     out.mkdir(parents=True, exist_ok=True)
     for f in published["files"]:
@@ -359,9 +402,7 @@ def add(name, names, embeddings=True, threads=None):
         )
     for n in names:
         catalog["libraries"][name]["featurizers"][n] = featurizer_entry(out, n)
-    catalog_path = OUTPUT / "catalog.json"
-    catalog_path.write_text(json.dumps(catalog, indent=2))
-    print(f"Added {', '.join(names)} to {out}; wrote {catalog_path}")
+    print(f"Added {', '.join(names)} to {out}; wrote {write_catalog(catalog)}")
 
 
 if __name__ == "__main__":

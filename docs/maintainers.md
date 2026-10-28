@@ -50,7 +50,9 @@ python scripts/build_library.py <library> --add <featurizer> -t 10   # add one t
 ```
 
 - **Names** follow the Ersilia Maintained Inputs: `<library>_<size>_v<N>`, such as `ersilia_reference_library_1M_v0`.
-- **Sources.** The Reference Library is pinned to a commit and a sha256. The others are files in the public S3 bucket: the script checks their number of molecules, and prints their sha256 for you to pin in `LIBRARIES` after the first build. A repeated id or SMILES stops the build, since a library should have none.
+- **Sources.** The Reference Library is pinned to a commit and a sha256. The others are files in the public S3 bucket. The script checks each source's number of molecules and its sha256, and prints the sha256 of a source that isn't pinned yet for you to pin in `LIBRARIES`. A repeated id or SMILES stops the build, since a library should have none.
+- **Invalid SMILES** are left out of the index and listed in the library's `skipped.csv`. The registry's `molecules` is the rows of the source, and the catalog's is the molecules indexed, so they differ by the skipped ones (COCONUT: 715,822 and 715,818).
+- **`catalog.json`** is the one on S3 plus the libraries in `data/libraries/` that aren't uploaded yet, so building one library never drops another. For a library on both, S3's entry wins.
 - **Resuming.** Each featurizer is built on its own, fastest first (ECFP, CLAMP, Mol-JEPA, SAND), and kept in `tmp/build/<library>/index`. After a stop, run the same command to build only the missing ones; an interrupted featurizer starts again from its beginning. The library is published once all four exist, and the seconds each one took are in `tmp/build/<library>/timings.json`.
 - **Embeddings** are kept by default, for users who `fetch` them, and take about 7 GB per million molecules over the four featurizers. A featurizer is indexed once, so `--no-embeddings` cannot be undone later.
 - **Published files are never edited.** A rebuild is published under the next version, such as `_v1`. `--add` is the one exception. It only adds the featurizer's files and catalog entry, so rows stay aligned for everyone who already fetched the library.
@@ -66,7 +68,7 @@ python scripts/build_library.py <library> --add <featurizer> -t 10   # add one t
     $(which python) scripts/build_library.py <library> -t 10
   ```
 
-  On a 16-thread laptop, SAND took 6 h 21 min and Mol-JEPA 5 h 7 min.
+  On a 16-thread laptop, SAND took 6 h 21 min and Mol-JEPA 5 h 7 min for the Reference Library. With 14 threads, the Enamine Hit Locator Library (460K) took 1 h 49 min and 1 h 27 min, and COCONUT (715K), whose molecules are larger, 4 h 19 min and 3 h 43 min. ECFP and CLAMP take minutes.
 
 ## Evaluating
 
