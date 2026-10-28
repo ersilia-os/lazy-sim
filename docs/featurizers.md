@@ -31,7 +31,7 @@ Recall@100 on the other libraries, measured the same way (sizes and times are in
 | `sand` | 0.966 | 0.972 | 0.935 |
 | `moljepa` | 0.963 | 0.970 | 0.902 |
 
-COCONUT is the hardest library for the 4-bit indexes. Its recall@10 is 0.876 for CLAMP, 0.924 for SAND and 0.852 for Mol-JEPA, and it rises with k. ECFP is exact on every library.
+COCONUT is the hardest library for the 4-bit indexes. Its recall@10 is 0.876 for CLAMP, 0.924 for SAND and 0.852 for Mol-JEPA, and it rises with k. ECFP is exact on every library. The cause is near-copies: COCONUT lists stereoisomers and tautomers of the same compound as separate molecules, with almost identical vectors. For 23% of queries with CLAMP, 28% with Mol-JEPA and 7% with SAND, at least 10 molecules score 0.99 or more, and the index's small score error reshuffles them. The molecules it misses are near-ties, a median 0.0004 (CLAMP, Mol-JEPA) to 0.0008 (SAND) below the true 10th neighbour's score, so what it returns instead is about as similar.
 
 Principles shared by all featurizers:
 - **SMILES are used exactly as given.** lazy-sim never standardises or strips salts. Curation happens upstream.
